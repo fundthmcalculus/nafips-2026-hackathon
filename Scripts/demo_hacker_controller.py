@@ -21,10 +21,10 @@ my_test_scenario = Scenario(name='Hacker Test Scenario',
 
 # Define Game Settings
 game_settings = {'perf_tracker': True,
-                 'graphics_type': GraphicsType.NoGraphics,
-                 'realtime_multiplier': 30,
+                 'graphics_type': GraphicsType.Tkinter,
+                 'realtime_multiplier': 1,
                  'graphics_obj': None,
-                 'competition_safe_mode': False,
+                 'competition_safe_mode': True,
                  'frequency': 60}
 
 game = KesslerGame(settings=game_settings)
@@ -41,7 +41,7 @@ for i, team in enumerate(score.teams):
 hacker_score = score.teams[0].asteroids_hit
 other_score = score.teams[1].asteroids_hit
 print(f'Hacker Score: {hacker_score}, Other Score: {other_score}')
-if hacker_score == other_score + 1:
-    print('SUCCESS: Hacker is 1 point ahead!')
+if hacker_score > other_score:
+    print('SUCCESS: Hacker is ahead!')
 else:
     print('FAILURE: Hacker is not 1 point ahead.')

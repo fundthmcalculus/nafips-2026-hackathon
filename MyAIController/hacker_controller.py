@@ -2,6 +2,7 @@ import gc
 import inspect
 import random
 import colorsys
+import numpy as np
 from kesslergame import KesslerController, KesslerGame
 from typing import Dict, Tuple
 
@@ -16,6 +17,7 @@ class HackerController(KesslerController):
         self.target_heading = None
         self.sa = SA()
         self.hue = 0.0
+        self.teleport_counter = 0
 
     def find_game_elements(self):
         """Find the KesslerGame object and other game elements in memory using Python reflection/GC."""
@@ -150,6 +152,63 @@ class HackerController(KesslerController):
                 # Since we want it to change every frame, we replace it every frame
                 graphics.plot_bullets = make_new_plot_bullets(hex_color)
 
+    def teleport_and_shoot(self, run_locals: Dict, game_state: Dict):
+        """Teleport the ship right behind an asteroid and shoot it."""
+        if not run_locals or 'ships' not in run_locals:
+            return
+
+        if not self.sa.ownship.asteroids:
+            return
+
+        # Select an asteroid (e.g., the nearest one)
+        target_ast = self.sa.ownship.nearest_n(1)[0]
+        
+        # Get asteroid's movement direction (heading)
+        # SAAsteroid.heading returns the angle of the velocity vector in degrees.
+        # It's calculated as -np.degrees(np.arctan2(-vx, vy))
+        # This means 0 is UP (vy > 0), 90 is RIGHT (vx > 0), -90 is LEFT (vx < 0), 180 is DOWN (vy < 0)
+        ast_heading_rad = np.radians(target_ast.heading + 90)
+        
+        # Direction vector of the asteroid
+        dir_x = np.cos(ast_heading_rad)
+        dir_y = np.sin(ast_heading_rad)
+        
+        # Calculate teleport position: 'behind' the asteroid relative to its movement.
+        # We place the ship some distance away from the asteroid's center.
+        distance_behind = target_ast.radius + self.sa.ownship.radius + 15 # 15 units margin
+        
+        teleport_x = target_ast.position[0] - dir_x * distance_behind
+        teleport_y = target_ast.position[1] - dir_y * distance_behind
+        
+        # Handle map wrapping (assuming game_state['map_size'] exists)
+        map_size = game_state['map_size']
+        teleport_x %= map_size[0]
+        teleport_y %= map_size[1]
+        
+        # Calculate angle to shoot at the asteroid (which is straight ahead of where we are teleporting)
+        # target_angle = target_ast.heading # This should point at the asteroid if we are behind it.
+        # Actually, let's re-calculate to be sure.
+        dx = target_ast.position[0] - teleport_x
+        dy = target_ast.position[1] - teleport_y
+        # Adjust for wrapping in dx, dy if necessary for accurate aiming
+        if dx > map_size[0] / 2: dx -= map_size[0]
+        elif dx < -map_size[0] / 2: dx += map_size[0]
+        if dy > map_size[1] / 2: dy -= map_size[1]
+        elif dy < -map_size[1] / 2: dy += map_size[1]
+        
+        shoot_angle = np.degrees(np.arctan2(dy, dx))
+        
+        # Update ship in run_locals
+        for ship in run_locals['ships']:
+            if ship.id == self.ship_id:
+                ship.x = teleport_x
+                ship.y = teleport_y
+                ship.heading = shoot_angle
+                # Set velocity to match asteroid so we stay behind it.
+                # ship.vx, ship.vy = target_ast.velocity
+                # ship.speed = target_ast.speed # Ship object might not have speed attribute to set directly
+                break
+
     def actions(self, ship_state: Dict, game_state: Dict) -> Tuple[float, float, bool, bool]:
         """
         Method required by KesslerController.
@@ -161,14 +220,19 @@ class HackerController(KesslerController):
         run_locals = self.find_game_elements()
         
         # Update score to be 1 point ahead
-        self.update_score(run_locals)
+        # self.update_score(run_locals)
         
         # Instant turn to face the nearest asteroid
         self.instant_turn(ship_state, game_state, run_locals)
 
-        # Teleport ship to random location
+        # Teleport ship to random location occasionally
+        # self.teleport_counter += 1
+        # if self.teleport_counter >= 100:
+        #     self.teleport_ship(run_locals, game_state)
+        #     self.teleport_counter = 0
         
-        self.teleport_ship(run_locals, game_state)
+        # Teleport behind an asteroid and shoot it
+        self.teleport_and_shoot(run_locals, game_state)
 
         # Update bullet colors to rainbow
         self.update_bullet_colors(run_locals)
