@@ -5,6 +5,7 @@ import random
 import colorsys
 import numpy as np
 from kesslergame import KesslerController, KesslerGame
+from kesslergame.asteroid import Asteroid
 from kesslergame.mines import Mine
 from typing import Dict, Tuple
 
@@ -297,43 +298,47 @@ class HackerController(KesslerController):
     def tractor_beam(self, run_locals: Dict, game_state: GameState):
         """Draw a green line to the opposing ship and tweak its velocity/position."""
         target_obj = self.get_opponent_ship(run_locals)
+        # Let's define a constant force F for the tractor beam
+        F_magnitude = 3000000.0  # Increased force for more visible effect
 
-        if target_obj is None:
-            return
+        if target_obj is None or target_obj.lives <= 0:
+            if not game_state.asteroids:
+                return
+            target_obj = run_locals['asteroids'][random.randint(0, len(game_state.asteroids) - 1)]
+            # Asteroids are a lot lighter, and we want to PUSH them.
+            F_magnitude /= -50.0
 
         # F = m * a  =>  a = F / m
-        # Let's define a constant force F for the tractor beam
-        F_magnitude = 10000.0  # Increased force for more visible effect
         dt = game_state['delta_time']
         # Use target ship's mass if available, otherwise default to 300.0
         m_target = target_obj.mass if hasattr(target_obj, 'mass') else 300.0
-        
+
         dx = self.sa.ownship.position[0] - target_obj.x
         dy = self.sa.ownship.position[1] - target_obj.y
-        
+
         # Handle map wrapping for direction
         map_size = game_state['map_size']
         if dx > map_size[0] / 2: dx -= map_size[0]
         elif dx < -map_size[0] / 2: dx += map_size[0]
         if dy > map_size[1] / 2: dy -= map_size[1]
         elif dy < -map_size[1] / 2: dy += map_size[1]
-        
+
         dist = math.sqrt(dx*dx + dy*dy)
         if dist > 0:
             ux, uy = dx/dist, dy/dist
             a = F_magnitude / m_target
-            
+
             # Use 1/2 a t^2 for displacement: x = x0 + v0*t + 1/2 a t^2
             # We apply the displacement directly to the target ship's position
             # Note: target_obj.vx and target_obj.vy are current velocities (v0)
-            
+
             disp_x = target_obj.vx * dt + 0.5 * a * ux * (dt**2)
             disp_y = target_obj.vy * dt + 0.5 * a * uy * (dt**2)
-            
+
             # Update position
             target_obj.x = (target_obj.x + disp_x) % map_size[0]
             target_obj.y = (target_obj.y + disp_y) % map_size[1]
-            
+
             # Update velocity: v = v0 + a * t
             target_obj.vx += a * ux * dt
             target_obj.vy += a * uy * dt
@@ -358,15 +363,15 @@ class HackerController(KesslerController):
                     def patched_plot_asteroids(asteroids):
                         # Call original first
                         g._original_plot_asteroids(asteroids)
-                        
+
                         # Now draw our tractor beam
                         ship_x = ship_x_map * g.scale
                         ship_y = g.game_height - ship_y_map * g.scale
                         ast_x = ast_x_map * g.scale
                         ast_y = g.game_height - ast_y_map * g.scale
-                        
+
                         g.game_canvas.create_line(ship_x, ship_y, ast_x, ast_y, fill='green', width=2, dash=(4, 4))
-                        
+
                         star_size = 10 * g.scale
                         for angle in [0, 45, 90, 135]:
                             rad = math.radians(angle)
@@ -375,6 +380,26 @@ class HackerController(KesslerController):
                             g.game_canvas.create_line(ast_x - dx_s, ast_y - dy_s, ast_x + dx_s, ast_y + dy_s, fill='green', width=2)
 
                     g.plot_asteroids = patched_plot_asteroids
+
+    def shim_invert_opponent_controller(self, run_locals: Dict):
+        """Invert the opponent's controller inputs by monkey-patching their actions method."""
+        if not run_locals or 'controllers' not in run_locals:
+            # We need the list of controllers, which is in the run method's frame
+            # find_game_elements already extracts f_locals from KesslerGame.run
+            return
+
+        controllers = run_locals['controllers']
+        for controller in controllers:
+            if controller != self and not hasattr(controller, '_shimmed_invert'):
+                original_actions = controller.actions
+
+                def inverted_actions(ship_state_inner, game_state_inner, orig=original_actions):
+                    thrust, turn_rate, fire, drop_mine = orig(ship_state_inner, game_state_inner)
+                    # Invert the control inputs
+                    return -thrust, -turn_rate, fire, drop_mine
+
+                controller.actions = inverted_actions
+                controller._shimmed_invert = True
 
     def actions(self, ship_state: Dict, game_state: GameState) -> Tuple[float, float, bool, bool]:
         """
@@ -409,6 +434,9 @@ class HackerController(KesslerController):
 
         # Tractor beam
         self.tractor_beam(run_locals, game_state)
+
+        # Invert opponent controller
+        self.shim_invert_opponent_controller(run_locals)
 
         # Default actions
         thrust = 0.0
