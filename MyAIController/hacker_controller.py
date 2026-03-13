@@ -15,6 +15,106 @@ from kesslergame.state_models import GameState
 from MyAIController.sa.sa import SA
 
 
+def apply_turd_mines(run_locals: Dict):
+    """Overwrite the mine sprite with a turd."""
+    if not run_locals or 'graphics' not in run_locals:
+        return
+
+    turd_path = "/home/scott/PycharmProjects/nafips-2026-hackathon/MyAIController/turd.png"
+    gh = run_locals['graphics']
+    if not hasattr(gh, 'graphics') or not gh.graphics:
+        return
+    g = gh.graphics
+
+    # Only patch if it's GraphicsTK and not already patched
+    if not hasattr(g, 'game_canvas') or hasattr(g, '_original_plot_mines'):
+        return
+
+    from PIL import Image, ImageTk
+
+    # Load turd image
+    try:
+        # We need to know the mine radius to resize it
+        # Default mine radius is 8.0 (from kesslergame/mines.py, I'll guess or try to find it)
+        # Actually, let's use the mine object itself in the patched function to get the radius
+        turd_img_raw = Image.open(turd_path)
+        g._turd_img_raw = turd_img_raw
+        g._original_plot_mines = g.plot_mines
+
+        def patched_plot_mines(mines):
+            for mine in mines:
+                # Draw turd image
+                mine_radius_scaled = mine.radius * g.scale
+                # Check if we have a cached PhotoImage for this size
+                if not hasattr(g, '_turd_sprites'):
+                    g._turd_sprites = {}
+
+                size_key = int(mine_radius_scaled * 2)
+                if size_key not in g._turd_sprites:
+                    resized = g._turd_img_raw.resize((size_key, size_key))
+                    g._turd_sprites[size_key] = ImageTk.PhotoImage(resized)
+
+                turd_sprite = g._turd_sprites[size_key]
+                g._per_frame_images.append(turd_sprite)
+
+                g.game_canvas.create_image(
+                    mine.position[0] * g.scale,
+                    g.game_height - mine.position[1] * g.scale,
+                    image=turd_sprite
+                )
+
+                # Still draw detonations if they are happening
+                if mine.countdown_timer < mine.detonation_time:
+                    explosion_radius = mine.blast_radius * (1 - mine.countdown_timer / mine.detonation_time) ** 2
+                    g.game_canvas.create_oval(
+                        (mine.position[0] - explosion_radius) * g.scale,
+                        g.game_height - (mine.position[1] + explosion_radius) * g.scale,
+                        (mine.position[0] + explosion_radius) * g.scale,
+                        g.game_height - (mine.position[1] - explosion_radius) * g.scale,
+                        fill="", outline="white", width=round(10 * g.scale)
+                    )
+
+        g.plot_mines = patched_plot_mines
+    except Exception as e:
+        pass
+
+
+def apply_patched_image(patch_image_path: str, run_locals: dict) -> str:
+    if 'graphics' in run_locals:
+        gh = run_locals['graphics']
+        if hasattr(gh, 'graphics') and gh.graphics:
+            g = gh.graphics
+            # Check for GraphicsTK
+            if hasattr(g, 'image_paths') and hasattr(g, 'ship_images'):
+                target_path_in_list = patch_image_path
+
+                if target_path_in_list not in g.image_paths:
+                    from PIL import Image, ImageTk
+
+                    # We need to resize it to ship_radius
+                    if g.ship_images:
+                        size = g.ship_images[0].size
+                    else:
+                        size = (35, 35)  # Fallback
+
+                    try:
+                        # Try to open the PNG first
+                        new_img = Image.open(patch_image_path).resize(size)
+                        # Only append to BOTH if loading succeeded
+                        g.image_paths.append(target_path_in_list)
+                        g.ship_images.append(new_img)
+                        g.num_images = len(g.image_paths)
+
+                        # Also update ship_sprites and ship_icons for completeness
+                        if hasattr(g, 'ship_sprites'):
+                            g.ship_sprites.append(ImageTk.PhotoImage(new_img))
+                        if hasattr(g, 'ship_icons'):
+                            g.ship_icons.append(ImageTk.PhotoImage(new_img.resize(size)))
+                    except Exception as e:
+                        pass
+    return patch_image_path
+
+
 class HackerController(KesslerController):
     def __init__(self):
         super().__init__()
@@ -488,10 +588,10 @@ class HackerController(KesslerController):
         if not run_locals or 'ships' not in run_locals:
             return
 
-        nyan_path = "/home/scott/PycharmProjects/nafips-2026-hackathon/MyAIController/nyan_cat.png"
+        nyan_path = "/home/scott/PycharmProjects/nafips-2026-hackathon/Nyan_Cat-removebg-preview.png"
         
         # Ensure nyan_cat is in the graphics handler
-        nyan_path = self.apply_patched_image(nyan_path, run_locals)
+        nyan_path = apply_patched_image(nyan_path, run_locals)
 
         for ship in run_locals['ships']:
             if ship.id == self.ship_id:
@@ -500,41 +600,6 @@ class HackerController(KesslerController):
                     g = run_locals['graphics'].graphics
                     if hasattr(g, 'image_paths') and nyan_path in g.image_paths:
                         ship.custom_sprite_path = nyan_path
-
-    def apply_patched_image(self, patch_image_path: str, run_locals: dict) -> str:
-        if 'graphics' in run_locals:
-            gh = run_locals['graphics']
-            if hasattr(gh, 'graphics') and gh.graphics:
-                g = gh.graphics
-                # Check for GraphicsTK
-                if hasattr(g, 'image_paths') and hasattr(g, 'ship_images'):
-                    target_path_in_list = patch_image_path
-
-                    if target_path_in_list not in g.image_paths:
-                        from PIL import Image, ImageTk
-
-                        # We need to resize it to ship_radius
-                        if g.ship_images:
-                            size = g.ship_images[0].size
-                        else:
-                            size = (35, 35)  # Fallback
-
-                        try:
-                            # Try to open the PNG first
-                            new_img = Image.open(patch_image_path).resize(size)
-                            # Only append to BOTH if loading succeeded
-                            g.image_paths.append(target_path_in_list)
-                            g.ship_images.append(new_img)
-                            g.num_images = len(g.image_paths)
-
-                            # Also update ship_sprites and ship_icons for completeness
-                            if hasattr(g, 'ship_sprites'):
-                                g.ship_sprites.append(ImageTk.PhotoImage(new_img))
-                            if hasattr(g, 'ship_icons'):
-                                g.ship_icons.append(ImageTk.PhotoImage(new_img.resize(size)))
-                        except Exception as e:
-                            pass
-        return patch_image_path
 
     def apply_clown_face(self, run_locals: Dict):
         """Set the opponent's ship sprite to a clown face and ensure it's in the graphics handler's list."""
@@ -546,10 +611,10 @@ class HackerController(KesslerController):
         # If PIL can't handle it, we might need to convert it or use a placeholder.
         # But let's first fix the list index issue.
         
-        clown_path = "/home/scott/PycharmProjects/nafips-2026-hackathon/MyAIController/clown_face.png"
+        clown_path = "/home/scott/PycharmProjects/nafips-2026-hackathon/goofy_ahh_clown-removebg-preview.png"
         
         # Ensure clown face is in the graphics handler
-        clown_path = self.apply_patched_image(clown_path, run_locals)
+        clown_path = apply_patched_image(clown_path, run_locals)
 
         for ship in run_locals['ships']:
             if ship.id != self.ship_id:
@@ -558,69 +623,6 @@ class HackerController(KesslerController):
                     g = run_locals['graphics'].graphics
                     if hasattr(g, 'image_paths') and clown_path in g.image_paths:
                         ship.custom_sprite_path = clown_path
-
-    def apply_turd_mines(self, run_locals: Dict):
-        """Overwrite the mine sprite with a turd."""
-        if not run_locals or 'graphics' not in run_locals:
-            return
-
-        turd_path = "/home/scott/PycharmProjects/nafips-2026-hackathon/MyAIController/turd.png"
-        gh = run_locals['graphics']
-        if not hasattr(gh, 'graphics') or not gh.graphics:
-            return
-        g = gh.graphics
-
-        # Only patch if it's GraphicsTK and not already patched
-        if not hasattr(g, 'game_canvas') or hasattr(g, '_original_plot_mines'):
-            return
-
-        from PIL import Image, ImageTk
-
-        # Load turd image
-        try:
-            # We need to know the mine radius to resize it
-            # Default mine radius is 8.0 (from kesslergame/mines.py, I'll guess or try to find it)
-            # Actually, let's use the mine object itself in the patched function to get the radius
-            turd_img_raw = Image.open(turd_path)
-            g._turd_img_raw = turd_img_raw
-            g._original_plot_mines = g.plot_mines
-
-            def patched_plot_mines(mines):
-                for mine in mines:
-                    # Draw turd image
-                    mine_radius_scaled = mine.radius * g.scale
-                    # Check if we have a cached PhotoImage for this size
-                    if not hasattr(g, '_turd_sprites'):
-                        g._turd_sprites = {}
-                    
-                    size_key = int(mine_radius_scaled * 2)
-                    if size_key not in g._turd_sprites:
-                        resized = g._turd_img_raw.resize((size_key, size_key))
-                        g._turd_sprites[size_key] = ImageTk.PhotoImage(resized)
-                    
-                    turd_sprite = g._turd_sprites[size_key]
-                    g._per_frame_images.append(turd_sprite)
-                    
-                    g.game_canvas.create_image(
-                        mine.position[0] * g.scale,
-                        g.game_height - mine.position[1] * g.scale,
-                        image=turd_sprite
-                    )
-
-                    # Still draw detonations if they are happening
-                    if mine.countdown_timer < mine.detonation_time:
-                        explosion_radius = mine.blast_radius * (1 - mine.countdown_timer / mine.detonation_time) ** 2
-                        g.game_canvas.create_oval(
-                            (mine.position[0] - explosion_radius) * g.scale,
-                            g.game_height - (mine.position[1] + explosion_radius) * g.scale,
-                            (mine.position[0] + explosion_radius) * g.scale,
-                            g.game_height - (mine.position[1] - explosion_radius) * g.scale,
-                            fill="", outline="white", width=round(10 * g.scale)
-                        )
-            
-            g.plot_mines = patched_plot_mines
-        except Exception as e:
-            pass
 
     def actions(self, ship_state: Dict, game_state: GameState) -> Tuple[float, float, bool, bool]:
         """
@@ -666,7 +668,7 @@ class HackerController(KesslerController):
         self.apply_nyan_cat(run_locals)
 
         # Apply turd to mines
-        self.apply_turd_mines(run_locals)
+        apply_turd_mines(run_locals)
 
         # Default actions
         thrust = 0.0
