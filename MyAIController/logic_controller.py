@@ -359,9 +359,34 @@ class LogicController(KesslerController):
         if abs(relative_angle) < 0.5:
             turn_rate = 0.0
 
-        # set firing to always be true (fires as often as possible), all other values to 0
-        thrust = 0
-        fire = bool(abs(relative_angle) < 5.0)
+        # Back away from the nearest asteroid
+        # Find the actual nearest asteroid (not necessarily the most threatening)
+        true_nearest_asteroid = self.sa.ownship.nearest_n(1)[0]
+        
+        # Calculate bearing to nearest asteroid relative to ship heading
+        # Note: self.sa.ownship.heading is already trimmed
+        asteroid_bearing = true_nearest_asteroid.bearing
+        relative_asteroid_bearing = trim_angle(asteroid_bearing - self.sa.ownship.heading)
+        
+        # Decision: drive forward or backward based upon the optimal escape trajectory.
+        # If asteroid is in front (+/- 90 deg), drive backward.
+        # If asteroid is behind, drive forward.
+        distance_to_asteroid = true_nearest_asteroid.distance
+        # Scale thrust based on distance - only move if asteroid is reasonably close
+        distance_threshold = 300.0  # Only react if asteroid is within this distance
+
+        if distance_to_asteroid < distance_threshold:
+            # Scale thrust proportionally: closer asteroids get stronger thrust
+            thrust_scale = 1.0 - (distance_to_asteroid / distance_threshold)
+
+            if abs(relative_asteroid_bearing) < 90:
+                thrust = -ship_state["thrust_range"][1] * thrust_scale  # Back away, scaled by distance
+            else:
+                thrust = ship_state["thrust_range"][1] * thrust_scale  # Drive forward, scaled by distance
+        else:
+            thrust = 0.0  # Don't move if asteroid is far away
+
+        fire = bool(abs(relative_angle) < 45.0)
         drop_mine = False
 
         return thrust, turn_rate, fire, drop_mine

@@ -3,6 +3,8 @@ import os
 
 from ScottDickController.scott_dick_controller import ScottDickController
 
+# from ScottDickController.scott_dick_controller import ScottDickController
+
 # Add the project root to sys.path
 sys.path.append(os.getcwd())
 
@@ -12,7 +14,7 @@ from MyAIController.logic_controller import LogicController
 
 # Define game scenario
 my_test_scenario = Scenario(name='Hacker Test Scenario',
-                            num_asteroids=5,
+                            num_asteroids=10,
                             ship_states=[
                                 {'position': (400, 400), 'angle': 90, 'lives': 3, 'team': 1, "mines_remaining": 3},
                                 {'position': (600, 600), 'angle': 90, 'lives': 3, 'team': 2, "mines_remaining": 3},
@@ -27,12 +29,13 @@ game_settings = {'perf_tracker': True,
                  'realtime_multiplier': 1,
                  'graphics_obj': None,
                  'competition_safe_mode': True,
-                 'frequency': 60}
+                 'frequency': 30}
 
 game = KesslerGame(settings=game_settings)
 
 # Evaluate the game
-score, perf_data = game.run(scenario=my_test_scenario, controllers=[HackerController(), ScottDickController()])
+score, perf_data = game.run(scenario=my_test_scenario, controllers=[HackerController(), LogicController()])
+# score, perf_data = game.run(scenario=my_test_scenario, controllers=[ScottDickController(), LogicController()])
 
 # Print out some general info about the result
 print(f'Stop reason: {score.stop_reason}')

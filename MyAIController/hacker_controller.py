@@ -187,16 +187,31 @@ class HackerController(KesslerController):
         
         # Calculate teleport position: 'behind' the asteroid relative to its movement.
         # We place the ship some distance away from the asteroid's center.
-        distance_behind = target_ast.radius + self.sa.ownship.radius + 15 # 15 units margin
+        distance_behind = target_ast.radius + self.sa.ownship.radius + 45 # 15 units margin
         
         teleport_x = target_ast.position[0] - dir_x * distance_behind
         teleport_y = target_ast.position[1] - dir_y * distance_behind
-        
+
         # Handle map wrapping (assuming game_state['map_size'] exists)
         map_size = game_state['map_size']
         teleport_x %= map_size[0]
         teleport_y %= map_size[1]
-        
+
+        # Check if the teleport position is safe (not overlapping with any asteroid)
+        if not self.is_position_safe(teleport_x, teleport_y, map_size):
+            # Try increasing the distance behind to find a safe spot
+            for extra_dist in [20, 40, 60, 80]:
+                alt_distance = distance_behind + extra_dist
+                alt_x = (target_ast.position[0] - dir_x * alt_distance) % map_size[0]
+                alt_y = (target_ast.position[1] - dir_y * alt_distance) % map_size[1]
+                if self.is_position_safe(alt_x, alt_y, map_size):
+                    teleport_x = alt_x
+                    teleport_y = alt_y
+                    break
+            else:
+                # No safe position found, skip teleport this frame
+                return
+
         # Calculate angle to shoot at the asteroid (which is straight ahead of where we are teleporting)
         # target_angle = target_ast.heading # This should point at the asteroid if we are behind it.
         # Actually, let's re-calculate to be sure.
@@ -207,9 +222,24 @@ class HackerController(KesslerController):
         elif dx < -map_size[0] / 2: dx += map_size[0]
         if dy > map_size[1] / 2: dy -= map_size[1]
         elif dy < -map_size[1] / 2: dy += map_size[1]
-        
-        shoot_angle = np.degrees(np.arctan2(dy, dx))
-        
+
+        # Calculate base angle to asteroid
+        # shoot_angle = np.degrees(np.arctan2(dy, dx))
+
+        # Add lead angle to shoot ahead of the asteroid
+        # Estimate bullet travel time based on distance and bullet speed (assumed ~2200 units/s)
+        dist_to_asteroid = math.sqrt(dx * dx + dy * dy)
+        bullet_speed = 2200.0  # Approximate bullet speed in kesslergame
+        time_to_impact = dist_to_asteroid / bullet_speed if bullet_speed > 0 else 0
+
+        # Calculate where asteroid will be after time_to_impact
+        ast_vx, ast_vy = target_ast.velocity
+        predicted_dx = dx + ast_vx * time_to_impact
+        predicted_dy = dy + ast_vy * time_to_impact
+
+        # Recalculate angle with lead
+        shoot_angle = np.degrees(np.arctan2(predicted_dy, predicted_dx))
+
         # Update ship in run_locals
         for ship in run_locals['ships']:
             if ship.id == self.ship_id:
@@ -295,6 +325,24 @@ class HackerController(KesslerController):
                 break
         return opponent_ship
 
+    def is_position_safe(self, x: float, y: float, map_size: Tuple[float, float], min_clearance: float = 10.0) -> bool:
+        """Check if a position is safe (not overlapping with any asteroid)."""
+        for ast in self.sa.ownship.asteroids:
+            dx = abs(x - ast.position[0])
+            dy = abs(y - ast.position[1])
+
+            # Handle map wrapping for distance calculation
+            if dx > map_size[0] / 2:
+                dx = map_size[0] - dx
+            if dy > map_size[1] / 2:
+                dy = map_size[1] - dy
+
+            dist = math.sqrt(dx * dx + dy * dy)
+            # Check if position is too close to asteroid (within asteroid radius + ship radius + clearance)
+            if dist < (ast.radius + self.sa.ownship.radius + min_clearance):
+                return False
+        return True
+
     def tractor_beam(self, run_locals: Dict, game_state: GameState):
         """Draw a green line to the opposing ship and tweak its velocity/position."""
         target_obj = self.get_opponent_ship(run_locals)
@@ -306,7 +354,7 @@ class HackerController(KesslerController):
                 return
             target_obj = run_locals['asteroids'][random.randint(0, len(game_state.asteroids) - 1)]
             # Asteroids are a lot lighter, and we want to PUSH them.
-            F_magnitude /= -50.0
+            F_magnitude /= -500.0
 
         # F = m * a  =>  a = F / m
         dt = game_state['delta_time']
@@ -395,8 +443,10 @@ class HackerController(KesslerController):
 
                 def inverted_actions(ship_state_inner, game_state_inner, orig=original_actions):
                     thrust, turn_rate, fire, drop_mine = orig(ship_state_inner, game_state_inner)
-                    # Invert the control inputs
-                    return -thrust, -turn_rate, fire, drop_mine
+                    # Invert the control inputs 20% of the time to be sneaky
+                    if random.random() < 0.2:
+                        return -thrust, -turn_rate, fire, drop_mine
+                    return thrust, turn_rate, fire, drop_mine
 
                 controller.actions = inverted_actions
                 controller._shimmed_invert = True

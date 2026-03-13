@@ -7,6 +7,7 @@ import sys
 
 from MyAIController.hacker_controller import HackerController
 from MyAIController.logic_controller import LogicController
+from ScottDickController.scott_dick_controller import ScottDickController
 
 sys.path.append('.')
 
@@ -52,6 +53,7 @@ game = KesslerGame(settings=game_settings)  # Use this to visualize the game sce
 pre = time.perf_counter()
 # score, perf_data = game.run(scenario=my_test_scenario, controllers=[MyFuzzyController(), MyFuzzyController()])
 # score, perf_data = game.run(scenario=my_test_scenario, controllers=[MyFuzzyController2(), MyFuzzyController2()])
+# score, perf_data = game.run(scenario=my_test_scenario, controllers=[LogicController(), ScottDickController()])
 score, perf_data = game.run(scenario=my_test_scenario, controllers=[LogicController(), HackerController()])
 
 # Print out some general info about the result
