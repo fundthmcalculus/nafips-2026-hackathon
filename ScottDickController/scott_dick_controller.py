@@ -12,19 +12,13 @@ from pickle import FALSE
 
 from kesslergame import KesslerController # In Eclipse, the name of the library is kesslergame, not src.kesslergame
 from typing import Dict, Tuple
-from cmath import sqrt
 import skfuzzy as fuzz
 from skfuzzy import control as ctrl
 import math
 import numpy as np
 # import matplotlib as plt
 
-
-
-
 class ScottDickController(KesslerController):
-    
-    
         
     def __init__(self):
         self.eval_frames = 0 #What is this?
@@ -127,7 +121,7 @@ class ScottDickController(KesslerController):
         
         
 
-    def actions(self, ship_state: Dict, game_state: Dict) -> Tuple[float, float, bool]:
+    def actions(self, ship_state: Dict, game_state: Dict) -> Tuple[float, float, bool, bool]:
         """
         Method processed each time step by this controller.
         """
@@ -245,7 +239,7 @@ class ScottDickController(KesslerController):
         self.eval_frames +=1
         
         #DEBUG
-        print(thrust, bullet_t, shooting_theta, turn_rate, fire)
+        # print(thrust, bullet_t, shooting_theta, turn_rate, fire)
         
         return thrust, turn_rate, fire, drop_mine
 

@@ -1,6 +1,8 @@
 import sys
 import os
 
+from ScottDickController.scott_dick_controller import ScottDickController
+
 # Add the project root to sys.path
 sys.path.append(os.getcwd())
 
@@ -16,7 +18,7 @@ my_test_scenario = Scenario(name='Hacker Test Scenario',
                                 {'position': (600, 600), 'angle': 90, 'lives': 3, 'team': 2, "mines_remaining": 3},
                             ],
                             map_size=(1000, 800),
-                            time_limit=10,
+                            time_limit=30,
                             stop_if_no_ammo=False)
 
 # Define Game Settings
@@ -30,7 +32,7 @@ game_settings = {'perf_tracker': True,
 game = KesslerGame(settings=game_settings)
 
 # Evaluate the game
-score, perf_data = game.run(scenario=my_test_scenario, controllers=[HackerController(), LogicController()])
+score, perf_data = game.run(scenario=my_test_scenario, controllers=[HackerController(), ScottDickController()])
 
 # Print out some general info about the result
 print(f'Stop reason: {score.stop_reason}')
