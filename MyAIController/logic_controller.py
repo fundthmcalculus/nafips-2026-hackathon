@@ -18,66 +18,15 @@ class LogicController(KesslerController):
         """
         Any variables or initialization desired for the controller can be set up here
         """
-        ...
-        self.chromosome = chromosome # this leaves chromosome object as None - will trigger default behavior
-        # or you can define your chromosome values (i.e. paste from your best found solution json) so your controller is
-        # the same as the one found through your training.
-        # self.chromosome = [
-        #     0.2631645225918112,
-        #     0.9352976507138837,
-        #     0.9194881615834452,
-        #     0.865825520047121,
-        #     0.9537717256003297,
-        #     0.3332987471941833,
-        #     0.15500677821329611,
-        #     0.6103279406781605,
-        #     0.700110463994626,
-        #     0.28645661550432655,
-        #     0.7817669414563869,
-        #     0.3242896160611243,
-        #     0.2193792619771311,
-        #     0.9187346087146049,
-        #     0.7565990950849348,
-        #     0.378982875637626,
-        #     0.20469566850073984,
-        #     0.4221919062502967,
-        #     0.09472152646554266,
-        #     0.22444174766372227,
-        #     0.43972091554025095,
-        #     0.3024938255921993,
-        #     0.03951149080348482,
-        #     0.07014695710862251,
-        #     0.5085111197870378,
-        #     0.7217226903052553,
-        #     0.8478160198517868,
-        #     0.9622056814666377,
-        #     0.9292672901679256,
-        #     0.8763434435737334,
-        #     0.8715824359186305,
-        #     0.622211987772582,
-        #     0.09103610636756931,
-        #     0.42932650446832776,
-        #     0.11151119794790532,
-        #     0.6449315965771553,
-        #     0.39484371578702315,
-        #     0.5792033115832056,
-        #     0.31492571381606194,
-        #     0.6833570548284794,
-        #     0.8625524374751714,
-        #     0.8127256586152101,
-        #     0.2550469991459845,
-        #     0.19763655967886684,
-        #     0.8740087388142191,
-        #     0.9902384288505531,
-        #     0.8321982213704795,
-        #     0.6787979639950257,
-        #     0.3945538617015545,
-        #     0.8955970115205919
-        #   ]
+        self.chromosome = chromosome
         self.aiming_fis = None
         self.aiming_fis_sim = None
         self.normalization_dist = None
         self.sa = SA()
+
+        self.shot_asteroids = set()
+        self.last_shot_clear_time = 60
+        self.clear_frames = 60
 
         # I put this in a separate function for cleanliness in the init procedure, but this just calls the functions
         # that create your FIS functions
@@ -189,15 +138,19 @@ class LogicController(KesslerController):
     def create_fuzzy_systems(self):
         self.create_aiming_fis()
 
-    def get_most_threatening_asteroid(self):
+    def get_most_threatening_asteroid(self, asteroids=None):
         """
         Find the asteroid most likely to hit the ship based on its bearing relative to ship heading
         and distance. Prioritizes asteroids that are close and directly in front of the ship.
 
+        Arguments:
+            asteroids: Optional list of asteroids to consider. If None, uses nearest 10.
+
         Returns:
             Asteroid object that is most threatening, or None if no asteroids exist
         """
-        asteroids = self.sa.ownship.nearest_n(10)
+        if asteroids is None:
+            asteroids = self.sa.ownship.nearest_n(10)
 
         if not asteroids:
             return None
@@ -320,12 +273,34 @@ class LogicController(KesslerController):
         # update the situational awareness with current information
         self.sa.update(ship_state, game_state)
 
+
+        # Every 2 seconds, clear out shot asteroids in case we missed
+        if self.last_shot_clear_time > self.clear_frames:
+            self.shot_asteroids.clear()
+            self.last_shot_clear_time = 0
+        self.last_shot_clear_time += 1
+
+        # Filter out asteroids that have already been shot
+        current_asteroid_ids = {id(ast) for ast in self.sa.ownship.asteroids}
+        self.shot_asteroids = {ast_id for ast_id in self.shot_asteroids if ast_id in current_asteroid_ids}
+        
+        available_asteroids = [ast for ast in self.sa.ownship.asteroids if id(ast) not in self.shot_asteroids]
+
         # get the asteroid that is most likely to hit the ship
-        nearest_asteroid = self.get_most_threatening_asteroid()
+        nearest_asteroid = self.get_most_threatening_asteroid(available_asteroids[:10] if available_asteroids else None)
 
         if nearest_asteroid is None:
-            # No threatening asteroids, default to nearest
-            nearest_asteroid = self.sa.ownship.nearest_n(1)[0]
+            # No threatening asteroids, default to nearest available
+            if available_asteroids:
+                # Sort by distance manually since we filtered the list
+                available_asteroids.sort(key=lambda x: x.distance)
+                nearest_asteroid = available_asteroids[0]
+            else:
+                # If everything has been shot, just take the nearest one regardless
+                nearest_asteroid = self.sa.ownship.nearest_n(1)[0] if self.sa.ownship.asteroids else None
+
+        if nearest_asteroid is None:
+            return 0.0, 0.0, False, False
 
         # Calculate intercept point considering asteroid velocity and bullet travel time
         intercept_x, intercept_y, time_to_intercept = self.calculate_intercept_point(nearest_asteroid)
@@ -388,6 +363,9 @@ class LogicController(KesslerController):
 
         fire = bool(abs(relative_angle) < 45.0)
         drop_mine = False
+
+        if fire and nearest_asteroid:
+            self.shot_asteroids.add(id(nearest_asteroid))
 
         return thrust, turn_rate, fire, drop_mine
 

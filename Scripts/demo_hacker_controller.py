@@ -3,8 +3,6 @@ import os
 
 from ScottDickController.scott_dick_controller import ScottDickController
 
-# from ScottDickController.scott_dick_controller import ScottDickController
-
 # Add the project root to sys.path
 sys.path.append(os.getcwd())
 
