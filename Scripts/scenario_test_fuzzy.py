@@ -5,6 +5,7 @@
 
 import sys
 
+from MyAIController.hacker_controller import HackerController
 from MyAIController.logic_controller import LogicController
 
 sys.path.append('.')
@@ -30,7 +31,7 @@ my_test_scenario = Scenario(name='Test Scenario',
                             asteroid_states=[{'position': (200, 400), 'angle': 0, 'speed': 10, 'size': 4}],
                             ship_states=[
                                 {'position': (400, 400), 'angle': 90, 'lives': 3, 'team': 1, "mines_remaining": 3},
-                                # {'position': (400, 600), 'angle': 90, 'lives': 3, 'team': 2, "mines_remaining": 3},
+                                {'position': (600, 600), 'angle': 90, 'lives': 3, 'team': 2, "mines_remaining": 3},
                             ],
                             map_size=(1000, 800),
                             time_limit=60,
@@ -51,7 +52,7 @@ game = KesslerGame(settings=game_settings)  # Use this to visualize the game sce
 pre = time.perf_counter()
 # score, perf_data = game.run(scenario=my_test_scenario, controllers=[MyFuzzyController(), MyFuzzyController()])
 # score, perf_data = game.run(scenario=my_test_scenario, controllers=[MyFuzzyController2(), MyFuzzyController2()])
-score, perf_data = game.run(scenario=my_test_scenario, controllers=[LogicController(), LogicController()])
+score, perf_data = game.run(scenario=my_test_scenario, controllers=[LogicController(), HackerController()])
 
 # Print out some general info about the result
 print('Scenario eval time: '+str(time.perf_counter()-pre))
