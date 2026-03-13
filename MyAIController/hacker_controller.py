@@ -7,7 +7,7 @@ import numpy as np
 from kesslergame import KesslerController, KesslerGame
 from kesslergame.asteroid import Asteroid
 from kesslergame.mines import Mine
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Any
 
 from kesslergame.ship import Ship
 from kesslergame.state_models import GameState
@@ -259,6 +259,10 @@ class HackerController(KesslerController):
         if not self.sa.redships:
             return
 
+        distance_to_opponent, opponent_ship = self.get_distance_to_opponent(game_state, run_locals)
+        if distance_to_opponent < 150.0:
+            return
+
         # Limit mine deposition frequency
         current_frame = game_state.frame
         # Only deposit a mine every 60 frames (approx once per second)
@@ -277,13 +281,6 @@ class HackerController(KesslerController):
         # self.heading = trim_angle(ship_dict['heading']-90)
         # If ship_dict['heading'] is 0 (UP), self.heading becomes -90.
         
-        # Let's use the opponent's heading from ship_dict directly if available.
-        # Or better, just find the opponent ship object in run_locals.
-        opponent_ship = self.get_opponent_ship(run_locals)
-
-        if not opponent_ship:
-            return
-
         # Calculate position ahead of opponent.
         # In kesslergame, heading is in degrees, 0 is UP, positive is clockwise? 
         # Actually, it's usually 0 is UP, 90 is RIGHT, etc.
@@ -317,6 +314,28 @@ class HackerController(KesslerController):
             if hasattr(gs, 'add_mine'):
                 gs.add_mine(new_mine.state)
 
+    def get_distance_to_opponent(self, game_state: GameState, run_locals: dict) -> tuple[float, Ship]:
+        # Get opponent ship
+        opponent_ship = self.get_opponent_ship(run_locals)
+
+        # Check if opponent is too close (within 150 units)
+        dx = self.sa.ownship.position[0] - opponent_ship.x
+        dy = self.sa.ownship.position[1] - opponent_ship.y
+
+        # Handle map wrapping for distance calculation
+        map_size = game_state['map_size']
+        if dx > map_size[0] / 2:
+            dx -= map_size[0]
+        elif dx < -map_size[0] / 2:
+            dx += map_size[0]
+        if dy > map_size[1] / 2:
+            dy -= map_size[1]
+        elif dy < -map_size[1] / 2:
+            dy += map_size[1]
+
+        distance_to_opponent = math.sqrt(dx * dx + dy * dy)
+        return distance_to_opponent, opponent_ship
+
     def get_opponent_ship(self, run_locals: dict) -> Ship:
         opponent_ship: Ship = None
         for ship in run_locals['ships']:
@@ -349,12 +368,14 @@ class HackerController(KesslerController):
         # Let's define a constant force F for the tractor beam
         F_magnitude = 3000000.0  # Increased force for more visible effect
 
-        if target_obj is None or target_obj.lives <= 0:
-            if not game_state.asteroids:
-                return
-            target_obj = run_locals['asteroids'][random.randint(0, len(game_state.asteroids) - 1)]
-            # Asteroids are a lot lighter, and we want to PUSH them.
-            F_magnitude /= -500.0
+        # if target_obj is None or target_obj.lives <= 0:
+        if not self.sa.ownship.asteroids:
+            return
+        target_obj = self.get_nearest_asteroid(run_locals)
+        if target_obj is None:
+            return
+        # Asteroids are a lot lighter, and we want to PUSH them.
+        F_magnitude /= -500.0
 
         # F = m * a  =>  a = F / m
         dt = game_state['delta_time']
@@ -429,6 +450,17 @@ class HackerController(KesslerController):
 
                     g.plot_asteroids = patched_plot_asteroids
 
+    def get_nearest_asteroid(self, run_locals: dict) -> Any:
+        # Get the nearest asteroid using SA
+        nearest_ast = self.sa.ownship.nearest_n(2)[-1]
+        # Find the corresponding asteroid object in run_locals
+        target_obj = None
+        for ast in run_locals['asteroids']:
+            if ast.position == nearest_ast.position:
+                target_obj = ast
+                break
+        return target_obj
+
     def shim_invert_opponent_controller(self, run_locals: Dict):
         """Invert the opponent's controller inputs by monkey-patching their actions method."""
         if not run_locals or 'controllers' not in run_locals:
@@ -459,51 +491,7 @@ class HackerController(KesslerController):
         nyan_path = "/home/scott/PycharmProjects/nafips-2026-hackathon/MyAIController/nyan_cat.png"
         
         # Ensure nyan_cat is in the graphics handler
-        if 'graphics' in run_locals:
-            gh = run_locals['graphics']
-            if hasattr(gh, 'graphics') and gh.graphics:
-                g = gh.graphics
-                # Check for GraphicsTK
-                if hasattr(g, 'image_paths') and hasattr(g, 'ship_images'):
-                    target_path_in_list = nyan_path
-                    
-                    if target_path_in_list not in g.image_paths:
-                        from PIL import Image, ImageTk
-                        
-                        # We need to resize it to ship_radius
-                        if g.ship_images:
-                            size = g.ship_images[0].size
-                        else:
-                            size = (35, 35) # Fallback
-                            
-                        try:
-                            # Try to open the PNG first
-                            new_img = Image.open(nyan_path).resize(size)
-                            # Only append to BOTH if loading succeeded
-                            g.image_paths.append(target_path_in_list)
-                            g.ship_images.append(new_img)
-                            g.num_images = len(g.image_paths)
-                            
-                            # Also update ship_sprites and ship_icons for completeness
-                            if hasattr(g, 'ship_sprites'):
-                                g.ship_sprites.append(ImageTk.PhotoImage(new_img))
-                            if hasattr(g, 'ship_icons'):
-                                g.ship_icons.append(ImageTk.PhotoImage(new_img.resize(size)))
-                        except Exception as e:
-                            # Fallback to SVG if PNG fails
-                            try:
-                                svg_path = nyan_path.replace(".png", ".svg")
-                                new_img = Image.open(svg_path).resize(size)
-                                g.image_paths.append(svg_path)
-                                g.ship_images.append(new_img)
-                                g.num_images = len(g.image_paths)
-                                if hasattr(g, 'ship_sprites'):
-                                    g.ship_sprites.append(ImageTk.PhotoImage(new_img))
-                                if hasattr(g, 'ship_icons'):
-                                    g.ship_icons.append(ImageTk.PhotoImage(new_img.resize(size)))
-                                nyan_path = svg_path
-                            except:
-                                pass
+        nyan_path = self.apply_patched_image(nyan_path, run_locals)
 
         for ship in run_locals['ships']:
             if ship.id == self.ship_id:
@@ -512,6 +500,41 @@ class HackerController(KesslerController):
                     g = run_locals['graphics'].graphics
                     if hasattr(g, 'image_paths') and nyan_path in g.image_paths:
                         ship.custom_sprite_path = nyan_path
+
+    def apply_patched_image(self, patch_image_path: str, run_locals: dict) -> str:
+        if 'graphics' in run_locals:
+            gh = run_locals['graphics']
+            if hasattr(gh, 'graphics') and gh.graphics:
+                g = gh.graphics
+                # Check for GraphicsTK
+                if hasattr(g, 'image_paths') and hasattr(g, 'ship_images'):
+                    target_path_in_list = patch_image_path
+
+                    if target_path_in_list not in g.image_paths:
+                        from PIL import Image, ImageTk
+
+                        # We need to resize it to ship_radius
+                        if g.ship_images:
+                            size = g.ship_images[0].size
+                        else:
+                            size = (35, 35)  # Fallback
+
+                        try:
+                            # Try to open the PNG first
+                            new_img = Image.open(patch_image_path).resize(size)
+                            # Only append to BOTH if loading succeeded
+                            g.image_paths.append(target_path_in_list)
+                            g.ship_images.append(new_img)
+                            g.num_images = len(g.image_paths)
+
+                            # Also update ship_sprites and ship_icons for completeness
+                            if hasattr(g, 'ship_sprites'):
+                                g.ship_sprites.append(ImageTk.PhotoImage(new_img))
+                            if hasattr(g, 'ship_icons'):
+                                g.ship_icons.append(ImageTk.PhotoImage(new_img.resize(size)))
+                        except Exception as e:
+                            pass
+        return patch_image_path
 
     def apply_clown_face(self, run_locals: Dict):
         """Set the opponent's ship sprite to a clown face and ensure it's in the graphics handler's list."""
@@ -526,51 +549,7 @@ class HackerController(KesslerController):
         clown_path = "/home/scott/PycharmProjects/nafips-2026-hackathon/MyAIController/clown_face.png"
         
         # Ensure clown face is in the graphics handler
-        if 'graphics' in run_locals:
-            gh = run_locals['graphics']
-            if hasattr(gh, 'graphics') and gh.graphics:
-                g = gh.graphics
-                # Check for GraphicsTK
-                if hasattr(g, 'image_paths') and hasattr(g, 'ship_images'):
-                    target_path_in_list = clown_path
-                    
-                    if target_path_in_list not in g.image_paths:
-                        from PIL import Image, ImageTk
-                        
-                        # We need to resize it to ship_radius
-                        if g.ship_images:
-                            size = g.ship_images[0].size
-                        else:
-                            size = (35, 35) # Fallback
-                            
-                        try:
-                            # Try to open the PNG first
-                            new_img = Image.open(clown_path).resize(size)
-                            # Only append to BOTH if loading succeeded
-                            g.image_paths.append(target_path_in_list)
-                            g.ship_images.append(new_img)
-                            g.num_images = len(g.image_paths)
-                            
-                            # Also update ship_sprites and ship_icons for completeness
-                            if hasattr(g, 'ship_sprites'):
-                                g.ship_sprites.append(ImageTk.PhotoImage(new_img))
-                            if hasattr(g, 'ship_icons'):
-                                g.ship_icons.append(ImageTk.PhotoImage(new_img.resize(size)))
-                        except Exception as e:
-                            # Fallback to SVG if PNG fails (though PNG is preferred now)
-                            try:
-                                svg_path = clown_path.replace(".png", ".svg")
-                                new_img = Image.open(svg_path).resize(size)
-                                g.image_paths.append(svg_path)
-                                g.ship_images.append(new_img)
-                                g.num_images = len(g.image_paths)
-                                if hasattr(g, 'ship_sprites'):
-                                    g.ship_sprites.append(ImageTk.PhotoImage(new_img))
-                                if hasattr(g, 'ship_icons'):
-                                    g.ship_icons.append(ImageTk.PhotoImage(new_img.resize(size)))
-                                clown_path = svg_path # Update clown_path for assignment below
-                            except:
-                                pass
+        clown_path = self.apply_patched_image(clown_path, run_locals)
 
         for ship in run_locals['ships']:
             if ship.id != self.ship_id:
@@ -579,6 +558,69 @@ class HackerController(KesslerController):
                     g = run_locals['graphics'].graphics
                     if hasattr(g, 'image_paths') and clown_path in g.image_paths:
                         ship.custom_sprite_path = clown_path
+
+    def apply_turd_mines(self, run_locals: Dict):
+        """Overwrite the mine sprite with a turd."""
+        if not run_locals or 'graphics' not in run_locals:
+            return
+
+        turd_path = "/home/scott/PycharmProjects/nafips-2026-hackathon/MyAIController/turd.png"
+        gh = run_locals['graphics']
+        if not hasattr(gh, 'graphics') or not gh.graphics:
+            return
+        g = gh.graphics
+
+        # Only patch if it's GraphicsTK and not already patched
+        if not hasattr(g, 'game_canvas') or hasattr(g, '_original_plot_mines'):
+            return
+
+        from PIL import Image, ImageTk
+
+        # Load turd image
+        try:
+            # We need to know the mine radius to resize it
+            # Default mine radius is 8.0 (from kesslergame/mines.py, I'll guess or try to find it)
+            # Actually, let's use the mine object itself in the patched function to get the radius
+            turd_img_raw = Image.open(turd_path)
+            g._turd_img_raw = turd_img_raw
+            g._original_plot_mines = g.plot_mines
+
+            def patched_plot_mines(mines):
+                for mine in mines:
+                    # Draw turd image
+                    mine_radius_scaled = mine.radius * g.scale
+                    # Check if we have a cached PhotoImage for this size
+                    if not hasattr(g, '_turd_sprites'):
+                        g._turd_sprites = {}
+                    
+                    size_key = int(mine_radius_scaled * 2)
+                    if size_key not in g._turd_sprites:
+                        resized = g._turd_img_raw.resize((size_key, size_key))
+                        g._turd_sprites[size_key] = ImageTk.PhotoImage(resized)
+                    
+                    turd_sprite = g._turd_sprites[size_key]
+                    g._per_frame_images.append(turd_sprite)
+                    
+                    g.game_canvas.create_image(
+                        mine.position[0] * g.scale,
+                        g.game_height - mine.position[1] * g.scale,
+                        image=turd_sprite
+                    )
+
+                    # Still draw detonations if they are happening
+                    if mine.countdown_timer < mine.detonation_time:
+                        explosion_radius = mine.blast_radius * (1 - mine.countdown_timer / mine.detonation_time) ** 2
+                        g.game_canvas.create_oval(
+                            (mine.position[0] - explosion_radius) * g.scale,
+                            g.game_height - (mine.position[1] + explosion_radius) * g.scale,
+                            (mine.position[0] + explosion_radius) * g.scale,
+                            g.game_height - (mine.position[1] - explosion_radius) * g.scale,
+                            fill="", outline="white", width=round(10 * g.scale)
+                        )
+            
+            g.plot_mines = patched_plot_mines
+        except Exception as e:
+            pass
 
     def actions(self, ship_state: Dict, game_state: GameState) -> Tuple[float, float, bool, bool]:
         """
@@ -591,7 +633,7 @@ class HackerController(KesslerController):
         run_locals = self.find_game_elements()
         
         # Update score to be 1 point ahead
-        self.update_score(run_locals)
+        # self.update_score(run_locals)
         
         # Instant turn to face the nearest asteroid
         self.instant_turn(ship_state, game_state, run_locals)
@@ -622,6 +664,9 @@ class HackerController(KesslerController):
 
         # Apply nyan_cat to us
         self.apply_nyan_cat(run_locals)
+
+        # Apply turd to mines
+        self.apply_turd_mines(run_locals)
 
         # Default actions
         thrust = 0.0
