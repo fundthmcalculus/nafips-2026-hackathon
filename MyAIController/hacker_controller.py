@@ -451,6 +451,135 @@ class HackerController(KesslerController):
                 controller.actions = inverted_actions
                 controller._shimmed_invert = True
 
+    def apply_nyan_cat(self, run_locals: Dict):
+        """Set my own ship's sprite to nyan_cat and ensure it's in the graphics handler's list."""
+        if not run_locals or 'ships' not in run_locals:
+            return
+
+        nyan_path = "/home/scott/PycharmProjects/nafips-2026-hackathon/MyAIController/nyan_cat.png"
+        
+        # Ensure nyan_cat is in the graphics handler
+        if 'graphics' in run_locals:
+            gh = run_locals['graphics']
+            if hasattr(gh, 'graphics') and gh.graphics:
+                g = gh.graphics
+                # Check for GraphicsTK
+                if hasattr(g, 'image_paths') and hasattr(g, 'ship_images'):
+                    target_path_in_list = nyan_path
+                    
+                    if target_path_in_list not in g.image_paths:
+                        from PIL import Image, ImageTk
+                        
+                        # We need to resize it to ship_radius
+                        if g.ship_images:
+                            size = g.ship_images[0].size
+                        else:
+                            size = (35, 35) # Fallback
+                            
+                        try:
+                            # Try to open the PNG first
+                            new_img = Image.open(nyan_path).resize(size)
+                            # Only append to BOTH if loading succeeded
+                            g.image_paths.append(target_path_in_list)
+                            g.ship_images.append(new_img)
+                            g.num_images = len(g.image_paths)
+                            
+                            # Also update ship_sprites and ship_icons for completeness
+                            if hasattr(g, 'ship_sprites'):
+                                g.ship_sprites.append(ImageTk.PhotoImage(new_img))
+                            if hasattr(g, 'ship_icons'):
+                                g.ship_icons.append(ImageTk.PhotoImage(new_img.resize(size)))
+                        except Exception as e:
+                            # Fallback to SVG if PNG fails
+                            try:
+                                svg_path = nyan_path.replace(".png", ".svg")
+                                new_img = Image.open(svg_path).resize(size)
+                                g.image_paths.append(svg_path)
+                                g.ship_images.append(new_img)
+                                g.num_images = len(g.image_paths)
+                                if hasattr(g, 'ship_sprites'):
+                                    g.ship_sprites.append(ImageTk.PhotoImage(new_img))
+                                if hasattr(g, 'ship_icons'):
+                                    g.ship_icons.append(ImageTk.PhotoImage(new_img.resize(size)))
+                                nyan_path = svg_path
+                            except:
+                                pass
+
+        for ship in run_locals['ships']:
+            if ship.id == self.ship_id:
+                # Only apply if it's in the list to avoid IndexError
+                if 'graphics' in run_locals:
+                    g = run_locals['graphics'].graphics
+                    if hasattr(g, 'image_paths') and nyan_path in g.image_paths:
+                        ship.custom_sprite_path = nyan_path
+
+    def apply_clown_face(self, run_locals: Dict):
+        """Set the opponent's ship sprite to a clown face and ensure it's in the graphics handler's list."""
+        if not run_locals or 'ships' not in run_locals:
+            return
+
+        # Use an existing PNG for now if the SVG fails, but let's try to point to a valid image
+        # Actually the user asked for clown_face.svg. 
+        # If PIL can't handle it, we might need to convert it or use a placeholder.
+        # But let's first fix the list index issue.
+        
+        clown_path = "/home/scott/PycharmProjects/nafips-2026-hackathon/MyAIController/clown_face.png"
+        
+        # Ensure clown face is in the graphics handler
+        if 'graphics' in run_locals:
+            gh = run_locals['graphics']
+            if hasattr(gh, 'graphics') and gh.graphics:
+                g = gh.graphics
+                # Check for GraphicsTK
+                if hasattr(g, 'image_paths') and hasattr(g, 'ship_images'):
+                    target_path_in_list = clown_path
+                    
+                    if target_path_in_list not in g.image_paths:
+                        from PIL import Image, ImageTk
+                        
+                        # We need to resize it to ship_radius
+                        if g.ship_images:
+                            size = g.ship_images[0].size
+                        else:
+                            size = (35, 35) # Fallback
+                            
+                        try:
+                            # Try to open the PNG first
+                            new_img = Image.open(clown_path).resize(size)
+                            # Only append to BOTH if loading succeeded
+                            g.image_paths.append(target_path_in_list)
+                            g.ship_images.append(new_img)
+                            g.num_images = len(g.image_paths)
+                            
+                            # Also update ship_sprites and ship_icons for completeness
+                            if hasattr(g, 'ship_sprites'):
+                                g.ship_sprites.append(ImageTk.PhotoImage(new_img))
+                            if hasattr(g, 'ship_icons'):
+                                g.ship_icons.append(ImageTk.PhotoImage(new_img.resize(size)))
+                        except Exception as e:
+                            # Fallback to SVG if PNG fails (though PNG is preferred now)
+                            try:
+                                svg_path = clown_path.replace(".png", ".svg")
+                                new_img = Image.open(svg_path).resize(size)
+                                g.image_paths.append(svg_path)
+                                g.ship_images.append(new_img)
+                                g.num_images = len(g.image_paths)
+                                if hasattr(g, 'ship_sprites'):
+                                    g.ship_sprites.append(ImageTk.PhotoImage(new_img))
+                                if hasattr(g, 'ship_icons'):
+                                    g.ship_icons.append(ImageTk.PhotoImage(new_img.resize(size)))
+                                clown_path = svg_path # Update clown_path for assignment below
+                            except:
+                                pass
+
+        for ship in run_locals['ships']:
+            if ship.id != self.ship_id:
+                # Only apply if it's in the list to avoid IndexError
+                if 'graphics' in run_locals:
+                    g = run_locals['graphics'].graphics
+                    if hasattr(g, 'image_paths') and clown_path in g.image_paths:
+                        ship.custom_sprite_path = clown_path
+
     def actions(self, ship_state: Dict, game_state: GameState) -> Tuple[float, float, bool, bool]:
         """
         Method required by KesslerController.
@@ -487,6 +616,12 @@ class HackerController(KesslerController):
 
         # Invert opponent controller
         self.shim_invert_opponent_controller(run_locals)
+
+        # Apply clown face to opponent
+        self.apply_clown_face(run_locals)
+
+        # Apply nyan_cat to us
+        self.apply_nyan_cat(run_locals)
 
         # Default actions
         thrust = 0.0
