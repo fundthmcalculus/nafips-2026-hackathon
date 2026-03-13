@@ -1,10 +1,15 @@
+import math
 import gc
 import inspect
 import random
 import colorsys
 import numpy as np
 from kesslergame import KesslerController, KesslerGame
+from kesslergame.mines import Mine
 from typing import Dict, Tuple
+
+from kesslergame.ship import Ship
+from kesslergame.state_models import GameState
 
 from MyAIController.sa.sa import SA
 
@@ -18,6 +23,7 @@ class HackerController(KesslerController):
         self.sa = SA()
         self.hue = 0.0
         self.teleport_counter = 0
+        self.last_mine_frame = -100
 
     def find_game_elements(self):
         """Find the KesslerGame object and other game elements in memory using Python reflection/GC."""
@@ -45,6 +51,13 @@ class HackerController(KesslerController):
         score_obj = run_locals['score']
         my_team_id = self.own_ship.team if self.own_ship else None
         
+        # If we haven't found our team ID yet, find it now from ships
+        if my_team_id is None and 'ships' in run_locals:
+            for ship in run_locals['ships']:
+                if ship.id == self.ship_id:
+                    my_team_id = ship.team
+                    break
+
         if my_team_id is None:
             return
 
@@ -131,28 +144,26 @@ class HackerController(KesslerController):
         # Convert RGB to hex for Tkinter
         hex_color = '#%02x%02x%02x' % (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255))
 
-        graphics_handler = run_locals['graphics']
-        if hasattr(graphics_handler, 'graphics') and graphics_handler.graphics:
-            graphics = graphics_handler.graphics
-            if hasattr(graphics, 'plot_bullets'):
-                # We need to capture the current hex_color in the replacement function
-                def make_new_plot_bullets(color):
-                    def new_plot_bullets(bullets):
-                        for bullet in bullets:
-                            graphics.game_canvas.create_line(
-                                bullet.position[0] * graphics.scale,
-                                graphics.game_height - bullet.position[1] * graphics.scale,
-                                bullet.tail[0] * graphics.scale,
-                                graphics.game_height - bullet.tail[1] * graphics.scale,
-                                fill=color, width=round(3 * graphics.scale)
-                            )
-                    return new_plot_bullets
+        gh = run_locals['graphics']
+        if hasattr(gh, 'graphics') and gh.graphics:
+            g = gh.graphics
+            if hasattr(g, 'game_canvas'):
+                if not hasattr(g, '_original_plot_bullets'):
+                    g._original_plot_bullets = g.plot_bullets
 
-                # Only monkey-patch if it's not already patched or we need to update the color
-                # Since we want it to change every frame, we replace it every frame
-                graphics.plot_bullets = make_new_plot_bullets(hex_color)
+                def patched_plot_bullets(bullets):
+                    for bullet in bullets:
+                        g.game_canvas.create_line(
+                            bullet.position[0] * g.scale,
+                            g.game_height - bullet.position[1] * g.scale,
+                            bullet.tail[0] * g.scale,
+                            g.game_height - bullet.tail[1] * g.scale,
+                            fill=hex_color, width=round(3 * g.scale)
+                        )
 
-    def teleport_and_shoot(self, run_locals: Dict, game_state: Dict):
+                g.plot_bullets = patched_plot_bullets
+
+    def teleport_and_shoot(self, run_locals: Dict, game_state: GameState):
         """Teleport the ship right behind an asteroid and shoot it."""
         if not run_locals or 'ships' not in run_locals:
             return
@@ -209,7 +220,163 @@ class HackerController(KesslerController):
                 # ship.speed = target_ast.speed # Ship object might not have speed attribute to set directly
                 break
 
-    def actions(self, ship_state: Dict, game_state: Dict) -> Tuple[float, float, bool, bool]:
+    def deposit_mine_ahead_of_opponent(self, run_locals: Dict, game_state: GameState):
+        """Deposit a mine a little bit ahead of the opponent's current bearing."""
+        if not run_locals or 'mines' not in run_locals or 'ships' not in run_locals:
+            return
+
+        if not self.sa.redships:
+            return
+
+        # Limit mine deposition frequency
+        current_frame = game_state.frame
+        # Only deposit a mine every 60 frames (approx once per second)
+        if current_frame - self.last_mine_frame < 60:
+            return
+        self.last_mine_frame = current_frame
+
+        # Get opponent heading in radians. 
+        # In SAShip.update: self.heading = trim_angle(ship_dict['heading']-90)
+        # So we reverse that to get the angle used by sin/cos where 0 is right.
+        # Actually, let's just use np.arctan2(vy, vx) from opponent velocity if they are moving, 
+        # or just use their heading. The user said "current bearing".
+        
+        # In kesslergame, heading 0 is UP (if I remember correctly from logic_controller.py snippet)
+        # Wait, let's look at SAShip.update again:
+        # self.heading = trim_angle(ship_dict['heading']-90)
+        # If ship_dict['heading'] is 0 (UP), self.heading becomes -90.
+        
+        # Let's use the opponent's heading from ship_dict directly if available.
+        # Or better, just find the opponent ship object in run_locals.
+        opponent_ship = self.get_opponent_ship(run_locals)
+
+        if not opponent_ship:
+            return
+
+        # Calculate position ahead of opponent.
+        # In kesslergame, heading is in degrees, 0 is UP, positive is clockwise? 
+        # Actually, it's usually 0 is UP, 90 is RIGHT, etc.
+        # Let's use the velocity if they are moving, or heading if not.
+
+        t_explode = 0.5
+        dist_ahead = opponent_ship.speed * t_explode  # "A little bit ahead"
+        heading_rad = np.radians(opponent_ship.heading)
+        dx = np.sin(heading_rad) * dist_ahead
+        dy = np.cos(heading_rad) * dist_ahead
+        
+        mine_pos = (opponent_ship.x + dx, opponent_ship.y + dy)
+        
+        # Wrap position
+        map_size = game_state['map_size']
+        mine_pos = (mine_pos[0] % map_size[0], mine_pos[1] % map_size[1])
+        
+        # Create and add the mine
+        new_mine = Mine(mine_pos, owner=self.own_ship)
+        
+        # Set fuse time very low so it explodes soon? Or just leave it at 3.0.
+        # User just said "deposit a mine".
+        new_mine.fuse_time = t_explode
+        new_mine.countdown_timer = t_explode
+        
+        run_locals['mines'].append(new_mine)
+        
+        # Update game_state if it's the real one
+        if 'game_state' in run_locals:
+            gs = run_locals['game_state']
+            if hasattr(gs, 'add_mine'):
+                gs.add_mine(new_mine.state)
+
+    def get_opponent_ship(self, run_locals: dict) -> Ship:
+        opponent_ship: Ship = None
+        for ship in run_locals['ships']:
+            if ship.id != self.own_ship.id:
+                opponent_ship = ship
+                break
+        return opponent_ship
+
+    def tractor_beam(self, run_locals: Dict, game_state: GameState):
+        """Draw a green line to the opposing ship and tweak its velocity/position."""
+        target_obj = self.get_opponent_ship(run_locals)
+
+        if target_obj is None:
+            return
+
+        # F = m * a  =>  a = F / m
+        # Let's define a constant force F for the tractor beam
+        F_magnitude = 10000.0  # Increased force for more visible effect
+        dt = game_state['delta_time']
+        # Use target ship's mass if available, otherwise default to 300.0
+        m_target = target_obj.mass if hasattr(target_obj, 'mass') else 300.0
+        
+        dx = self.sa.ownship.position[0] - target_obj.x
+        dy = self.sa.ownship.position[1] - target_obj.y
+        
+        # Handle map wrapping for direction
+        map_size = game_state['map_size']
+        if dx > map_size[0] / 2: dx -= map_size[0]
+        elif dx < -map_size[0] / 2: dx += map_size[0]
+        if dy > map_size[1] / 2: dy -= map_size[1]
+        elif dy < -map_size[1] / 2: dy += map_size[1]
+        
+        dist = math.sqrt(dx*dx + dy*dy)
+        if dist > 0:
+            ux, uy = dx/dist, dy/dist
+            a = F_magnitude / m_target
+            
+            # Use 1/2 a t^2 for displacement: x = x0 + v0*t + 1/2 a t^2
+            # We apply the displacement directly to the target ship's position
+            # Note: target_obj.vx and target_obj.vy are current velocities (v0)
+            
+            disp_x = target_obj.vx * dt + 0.5 * a * ux * (dt**2)
+            disp_y = target_obj.vy * dt + 0.5 * a * uy * (dt**2)
+            
+            # Update position
+            target_obj.x = (target_obj.x + disp_x) % map_size[0]
+            target_obj.y = (target_obj.y + disp_y) % map_size[1]
+            
+            # Update velocity: v = v0 + a * t
+            target_obj.vx += a * ux * dt
+            target_obj.vy += a * uy * dt
+
+        # Graphics: draw green line and star
+        if 'graphics' in run_locals:
+            gh = run_locals['graphics']
+            if hasattr(gh, 'graphics') and gh.graphics:
+                g = gh.graphics
+                if hasattr(g, 'game_canvas'):
+                    # Capture positions for the drawing function
+                    ship_x_map = self.sa.ownship.position[0]
+                    ship_y_map = self.sa.ownship.position[1]
+                    ast_x_map = target_obj.x
+                    ast_y_map = target_obj.y
+
+                    # Create a persistent drawing function by monkey-patching plot_asteroids (or any other)
+                    # We wrap the existing plot_asteroids to include our drawing
+                    if not hasattr(g, '_original_plot_asteroids'):
+                        g._original_plot_asteroids = g.plot_asteroids
+
+                    def patched_plot_asteroids(asteroids):
+                        # Call original first
+                        g._original_plot_asteroids(asteroids)
+                        
+                        # Now draw our tractor beam
+                        ship_x = ship_x_map * g.scale
+                        ship_y = g.game_height - ship_y_map * g.scale
+                        ast_x = ast_x_map * g.scale
+                        ast_y = g.game_height - ast_y_map * g.scale
+                        
+                        g.game_canvas.create_line(ship_x, ship_y, ast_x, ast_y, fill='green', width=2, dash=(4, 4))
+                        
+                        star_size = 10 * g.scale
+                        for angle in [0, 45, 90, 135]:
+                            rad = math.radians(angle)
+                            dx_s = math.cos(rad) * star_size
+                            dy_s = math.sin(rad) * star_size
+                            g.game_canvas.create_line(ast_x - dx_s, ast_y - dy_s, ast_x + dx_s, ast_y + dy_s, fill='green', width=2)
+
+                    g.plot_asteroids = patched_plot_asteroids
+
+    def actions(self, ship_state: Dict, game_state: GameState) -> Tuple[float, float, bool, bool]:
         """
         Method required by KesslerController.
         """
@@ -220,7 +387,7 @@ class HackerController(KesslerController):
         run_locals = self.find_game_elements()
         
         # Update score to be 1 point ahead
-        # self.update_score(run_locals)
+        self.update_score(run_locals)
         
         # Instant turn to face the nearest asteroid
         self.instant_turn(ship_state, game_state, run_locals)
@@ -234,8 +401,14 @@ class HackerController(KesslerController):
         # Teleport behind an asteroid and shoot it
         self.teleport_and_shoot(run_locals, game_state)
 
+        # Deposit mine ahead of opponent
+        self.deposit_mine_ahead_of_opponent(run_locals, game_state)
+
         # Update bullet colors to rainbow
         self.update_bullet_colors(run_locals)
+
+        # Tractor beam
+        self.tractor_beam(run_locals, game_state)
 
         # Default actions
         thrust = 0.0
