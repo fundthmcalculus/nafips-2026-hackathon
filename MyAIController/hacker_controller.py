@@ -234,16 +234,9 @@ class HackerController(KesslerController):
                 break
 
     def update_bullet_colors(self, run_locals: Dict):
-        """Changes the bullet color every frame by mapping through the HSV colorspace."""
+        """Changes the bullet color so each bullet has a unique color based on when it was shot."""
         if not run_locals or 'graphics' not in run_locals:
             return
-
-        # Increment hue for rainbow effect
-        self.hue = (self.hue + 0.01) % 1.0
-        # Convert HSV to RGB
-        rgb = colorsys.hsv_to_rgb(self.hue, 1.0, 1.0)
-        # Convert RGB to hex for Tkinter
-        hex_color = '#%02x%02x%02x' % (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255))
 
         gh = run_locals['graphics']
         if hasattr(gh, 'graphics') and gh.graphics:
@@ -252,14 +245,29 @@ class HackerController(KesslerController):
                 if not hasattr(g, '_original_plot_bullets'):
                     g._original_plot_bullets = g.plot_bullets
 
+                # Store a reference to self (HackerController) for the closure to access its properties.
+                controller = self
+
                 def patched_plot_bullets(bullets):
                     for bullet in bullets:
+                        # Use a global cache dictionary to store bullet colors
+                        if not hasattr(g, '_bullet_color_cache'):
+                            g._bullet_color_cache = {}
+
+                        bullet_id = id(bullet)
+                        if bullet_id not in g._bullet_color_cache:
+                            # Use the current hue for this new bullet and increment the controller's hue.
+                            rgb = colorsys.hsv_to_rgb(controller.hue, 1.0, 1.0)
+                            g._bullet_color_cache[bullet_id] = '#%02x%02x%02x' % (int(rgb[0] * 255), int(rgb[1] * 255),
+                                                                                  int(rgb[2] * 255))
+                            controller.hue = (controller.hue + 0.05) % 1.0
+
                         g.game_canvas.create_line(
                             bullet.position[0] * g.scale,
                             g.game_height - bullet.position[1] * g.scale,
                             bullet.tail[0] * g.scale,
                             g.game_height - bullet.tail[1] * g.scale,
-                            fill=hex_color, width=round(3 * g.scale)
+                            fill=g._bullet_color_cache[bullet_id], width=round(3 * g.scale)
                         )
 
                 g.plot_bullets = patched_plot_bullets
@@ -418,6 +426,10 @@ class HackerController(KesslerController):
         # Get opponent ship
         opponent_ship = self.get_opponent_ship(run_locals)
 
+        distance_to_opponent, _, _ = self.get_distance_to_ship(game_state, opponent_ship)
+        return distance_to_opponent, opponent_ship
+
+    def get_distance_to_ship(self, game_state: GameState, opponent_ship: Ship) -> tuple[float, float, float]:
         # Check if opponent is too close (within 150 units)
         dx = self.sa.ownship.position[0] - opponent_ship.x
         dy = self.sa.ownship.position[1] - opponent_ship.y
@@ -434,7 +446,7 @@ class HackerController(KesslerController):
             dy += map_size[1]
 
         distance_to_opponent = math.sqrt(dx * dx + dy * dy)
-        return distance_to_opponent, opponent_ship
+        return distance_to_opponent, dx, dy
 
     def get_opponent_ship(self, run_locals: dict) -> Ship:
         opponent_ship: Ship = None
@@ -482,18 +494,10 @@ class HackerController(KesslerController):
         # Use target ship's mass if available, otherwise default to 300.0
         m_target = target_obj.mass if hasattr(target_obj, 'mass') else 300.0
 
-        dx = self.sa.ownship.position[0] - target_obj.x
-        dy = self.sa.ownship.position[1] - target_obj.y
+        dist, dx, dy = self.get_distance_to_ship(game_state, target_obj)
 
-        # Handle map wrapping for direction
-        map_size = game_state['map_size']
-        if dx > map_size[0] / 2: dx -= map_size[0]
-        elif dx < -map_size[0] / 2: dx += map_size[0]
-        if dy > map_size[1] / 2: dy -= map_size[1]
-        elif dy < -map_size[1] / 2: dy += map_size[1]
-
-        dist = math.sqrt(dx*dx + dy*dy)
         if dist > 0:
+            map_size = game_state['map_size']
             ux, uy = dx/dist, dy/dist
             a = F_magnitude / m_target
 
@@ -513,6 +517,9 @@ class HackerController(KesslerController):
             target_obj.vy += a * uy * dt
 
         # Graphics: draw green line and star
+        self.patch_draw_tractor_beam(run_locals, target_obj)
+
+    def patch_draw_tractor_beam(self, run_locals: dict, target_obj):
         if 'graphics' in run_locals:
             gh = run_locals['graphics']
             if hasattr(gh, 'graphics') and gh.graphics:
@@ -546,7 +553,8 @@ class HackerController(KesslerController):
                             rad = math.radians(angle)
                             dx_s = math.cos(rad) * star_size
                             dy_s = math.sin(rad) * star_size
-                            g.game_canvas.create_line(ast_x - dx_s, ast_y - dy_s, ast_x + dx_s, ast_y + dy_s, fill='green', width=2)
+                            g.game_canvas.create_line(ast_x - dx_s, ast_y - dy_s, ast_x + dx_s, ast_y + dy_s,
+                                                      fill='green', width=2)
 
                     g.plot_asteroids = patched_plot_asteroids
 
