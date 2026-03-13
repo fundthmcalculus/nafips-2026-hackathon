@@ -24,6 +24,7 @@ game_settings = {'perf_tracker': True,
                  'graphics_type': GraphicsType.Tkinter,
                  'realtime_multiplier': 1,
                  'graphics_obj': None,
+                 'competition_safe_mode': True,
                  'frequency': 60}
 
 game = KesslerGame(settings=game_settings)

@@ -1,6 +1,7 @@
 import gc
 import inspect
 import random
+import colorsys
 from kesslergame import KesslerController, KesslerGame
 from typing import Dict, Tuple
 
@@ -14,6 +15,7 @@ class HackerController(KesslerController):
         self.own_ship = None
         self.target_heading = None
         self.sa = SA()
+        self.hue = 0.0
 
     def find_game_elements(self):
         """Find the KesslerGame object and other game elements in memory using Python reflection/GC."""
@@ -115,6 +117,39 @@ class HackerController(KesslerController):
                 ship.x, ship.y = (new_x, new_y)
                 break
 
+    def update_bullet_colors(self, run_locals: Dict):
+        """Changes the bullet color every frame by mapping through the HSV colorspace."""
+        if not run_locals or 'graphics' not in run_locals:
+            return
+
+        # Increment hue for rainbow effect
+        self.hue = (self.hue + 0.01) % 1.0
+        # Convert HSV to RGB
+        rgb = colorsys.hsv_to_rgb(self.hue, 1.0, 1.0)
+        # Convert RGB to hex for Tkinter
+        hex_color = '#%02x%02x%02x' % (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255))
+
+        graphics_handler = run_locals['graphics']
+        if hasattr(graphics_handler, 'graphics') and graphics_handler.graphics:
+            graphics = graphics_handler.graphics
+            if hasattr(graphics, 'plot_bullets'):
+                # We need to capture the current hex_color in the replacement function
+                def make_new_plot_bullets(color):
+                    def new_plot_bullets(bullets):
+                        for bullet in bullets:
+                            graphics.game_canvas.create_line(
+                                bullet.position[0] * graphics.scale,
+                                graphics.game_height - bullet.position[1] * graphics.scale,
+                                bullet.tail[0] * graphics.scale,
+                                graphics.game_height - bullet.tail[1] * graphics.scale,
+                                fill=color, width=round(3 * graphics.scale)
+                            )
+                    return new_plot_bullets
+
+                # Only monkey-patch if it's not already patched or we need to update the color
+                # Since we want it to change every frame, we replace it every frame
+                graphics.plot_bullets = make_new_plot_bullets(hex_color)
+
     def actions(self, ship_state: Dict, game_state: Dict) -> Tuple[float, float, bool, bool]:
         """
         Method required by KesslerController.
@@ -132,7 +167,11 @@ class HackerController(KesslerController):
         self.instant_turn(ship_state, game_state, run_locals)
 
         # Teleport ship to random location
+        
         self.teleport_ship(run_locals, game_state)
+
+        # Update bullet colors to rainbow
+        self.update_bullet_colors(run_locals)
 
         # Default actions
         thrust = 0.0
