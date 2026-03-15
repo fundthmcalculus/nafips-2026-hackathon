@@ -609,6 +609,88 @@ class HackerController(KesslerController):
                     if hasattr(g, 'image_paths') and nyan_path in g.image_paths:
                         ship.custom_sprite_path = nyan_path
 
+    def shotgun_blast(self, run_locals: Dict, game_state: GameState):
+        """Find a grouping of medium size asteroids and spawn a mine in the middle of them."""
+        if not run_locals or 'mines' not in run_locals:
+            return
+
+        # Frequency limit for mines (every 90 frames for shotgun)
+        current_frame = game_state.frame
+        if not hasattr(self, 'last_shotgun_frame'):
+            self.last_shotgun_frame = -100
+        if current_frame - self.last_shotgun_frame < 90:
+            return
+
+        # Medium size asteroids (size 2 or 3)
+        medium_asteroids = [ast for ast in self.sa.ownship.asteroids if ast.size in (2, 3)]
+        if len(medium_asteroids) < 2:
+            return
+
+        # Simple clustering: for each asteroid, find how many other medium asteroids are near it
+        cluster_radius = 150.0
+        best_cluster = []
+        
+        map_size = game_state['map_size']
+
+        for ast1 in medium_asteroids:
+            cluster = [ast1]
+            for ast2 in medium_asteroids:
+                if ast1 == ast2:
+                    continue
+                
+                dx = abs(ast1.position[0] - ast2.position[0])
+                dy = abs(ast1.position[1] - ast2.position[1])
+                
+                # Wrap
+                if dx > map_size[0] / 2: dx = map_size[0] - dx
+                if dy > map_size[1] / 2: dy = map_size[1] - dy
+                
+                dist = math.sqrt(dx*dx + dy*dy)
+                if dist < cluster_radius:
+                    cluster.append(ast2)
+            
+            if len(cluster) > len(best_cluster):
+                best_cluster = cluster
+
+        # Require at least 2 asteroids for a "grouping"
+        if len(best_cluster) < 2:
+            return
+
+        # Calculate centroid (middle)
+        # To handle wrapping correctly, we'd need more complex logic, 
+        # but for simple shotgun blast, let's just average them if they are close.
+        # Actually, a better way for wrapped centroid: pick one as reference.
+        ref_x, ref_y = best_cluster[0].position
+        sum_dx, sum_dy = 0.0, 0.0
+        for ast in best_cluster:
+            dx = ast.position[0] - ref_x
+            dy = ast.position[1] - ref_y
+            # Wrap dx, dy
+            if dx > map_size[0] / 2: dx -= map_size[0]
+            elif dx < -map_size[0] / 2: dx += map_size[0]
+            if dy > map_size[1] / 2: dy -= map_size[1]
+            elif dy < -map_size[1] / 2: dy += map_size[1]
+            sum_dx += dx
+            sum_dy += dy
+        
+        avg_dx = sum_dx / len(best_cluster)
+        avg_dy = sum_dy / len(best_cluster)
+        
+        mine_pos = ((ref_x + avg_dx) % map_size[0], (ref_y + avg_dy) % map_size[1])
+
+        # Spawn mine
+        new_mine = Mine(mine_pos, owner=self.own_ship)
+        new_mine.fuse_time = 0.1 # Explode almost instantly
+        new_mine.countdown_timer = 0.1
+        
+        run_locals['mines'].append(new_mine)
+        if 'game_state' in run_locals:
+            gs = run_locals['game_state']
+            if hasattr(gs, 'add_mine'):
+                gs.add_mine(new_mine.state)
+        
+        self.last_shotgun_frame = current_frame
+
     def apply_clown_face(self, run_locals: Dict):
         """Set the opponent's ship sprite to a clown face and ensure it's in the graphics handler's list."""
         if not run_locals or 'ships' not in run_locals:
@@ -677,6 +759,9 @@ class HackerController(KesslerController):
 
         # Apply turd to mines
         apply_turd_mines(run_locals)
+
+        # Shotgun blast: find clusters of medium asteroids and spawn mines
+        self.shotgun_blast(run_locals, game_state)
 
         # Default actions
         thrust = 0.0

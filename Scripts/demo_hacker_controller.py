@@ -1,7 +1,7 @@
 import sys
 import os
 
-from ScottDickController.scott_dick_controller import ScottDickController
+# from ScottDickController.scott_dick_controller import ScottDickController
 
 # Add the project root to sys.path
 sys.path.append(os.getcwd())
@@ -24,7 +24,7 @@ my_test_scenario = Scenario(name='Hacker Test Scenario',
 # Define Game Settings
 game_settings = {'perf_tracker': True,
                  'graphics_type': GraphicsType.Tkinter,
-                 'realtime_multiplier': 1,
+                 'realtime_multiplier': 0.7,
                  'graphics_obj': None,
                  'competition_safe_mode': True,
                  'frequency': 30}
