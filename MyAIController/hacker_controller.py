@@ -1,11 +1,11 @@
 import math
 import gc
 import inspect
+import os
 import random
 import colorsys
 import numpy as np
 from kesslergame import KesslerController, KesslerGame
-from kesslergame.asteroid import Asteroid
 from kesslergame.mines import Mine
 from typing import Dict, Tuple, Any
 
@@ -20,7 +20,7 @@ def apply_turd_mines(run_locals: Dict):
     if not run_locals or 'graphics' not in run_locals:
         return
 
-    turd_path = "/home/scott/PycharmProjects/nafips-2026-hackathon/MyAIController/turd.png"
+    turd_path = os.path.join(os.path.dirname(__file__), "turd.png")
     gh = run_locals['graphics']
     if not hasattr(gh, 'graphics') or not gh.graphics:
         return
@@ -308,7 +308,7 @@ class HackerController(KesslerController):
         # Check if the teleport position is safe (not overlapping with any asteroid)
         if not self.is_position_safe(teleport_x, teleport_y, map_size):
             # Try increasing the distance behind to find a safe spot
-            for extra_dist in [20, 40, 60, 80]:
+            for extra_dist in [20, 40, 60, 80, 120,160,200,300,400,600,800]:
                 alt_distance = distance_behind + extra_dist
                 alt_x = (target_ast.position[0] - dir_x * alt_distance) % map_size[0]
                 alt_y = (target_ast.position[1] - dir_y * alt_distance) % map_size[1]
@@ -596,7 +596,7 @@ class HackerController(KesslerController):
         if not run_locals or 'ships' not in run_locals:
             return
 
-        nyan_path = "/home/scott/PycharmProjects/nafips-2026-hackathon/Nyan_Cat-removebg-preview.png"
+        nyan_path = os.path.join(os.path.dirname(__file__), "Nyan_Cat-removebg-preview.png")
         
         # Ensure nyan_cat is in the graphics handler
         nyan_path = apply_patched_image(nyan_path, run_locals)
@@ -619,7 +619,7 @@ class HackerController(KesslerController):
         # If PIL can't handle it, we might need to convert it or use a placeholder.
         # But let's first fix the list index issue.
         
-        clown_path = "/home/scott/PycharmProjects/nafips-2026-hackathon/goofy_ahh_clown-removebg-preview.png"
+        clown_path = os.path.join(os.path.dirname(__file__), "goofy_ahh_clown-removebg-preview.png")
         
         # Ensure clown face is in the graphics handler
         clown_path = apply_patched_image(clown_path, run_locals)
