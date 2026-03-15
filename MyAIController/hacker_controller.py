@@ -480,14 +480,15 @@ class HackerController(KesslerController):
         # Let's define a constant force F for the tractor beam
         F_magnitude = 3000000.0  # Increased force for more visible effect
 
-        # if target_obj is None or target_obj.lives <= 0:
-        if not self.sa.ownship.asteroids:
-            return
-        target_obj = self.get_nearest_asteroid(run_locals)
-        if target_obj is None:
-            return
-        # Asteroids are a lot lighter, and we want to PUSH them.
-        F_magnitude /= -500.0
+        if target_obj is None or target_obj.lives <= 0:
+            if not self.sa.ownship.asteroids:
+                return
+            target_obj = self.get_nearest_asteroid(run_locals)
+            if target_obj is None:
+                return
+            # Asteroids are a lot lighter, and we want to PUSH them.
+            # F_magnitude /= -500.0
+            F_magnitude /= -10
 
         # F = m * a  =>  a = F / m
         dt = game_state['delta_time']
