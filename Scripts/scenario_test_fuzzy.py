@@ -6,7 +6,7 @@
 import sys
 
 from MyAIController.logic_controller import LogicController
-from MyAIController.logic_controller02 import LogicController02
+from MyAIController.logic_controller03 import LogicController03
 
 sys.path.append('.')
 
@@ -20,7 +20,7 @@ all_results = []
 
 # Disable graphics for faster execution across all scenarios
 game_settings = {'perf_tracker': True,
-                 'graphics_type': GraphicsType.Tkinter,  # Change to GraphicsType.Tkinter to visualize
+                 'graphics_type': GraphicsType.NoGraphics,  # Change to GraphicsType.Tkinter to visualize
                  'realtime_multiplier': 6,
                  'graphics_obj': None,
                  'frequency': 60}
@@ -36,7 +36,7 @@ for scenario_idx, scenario in enumerate(custom_scenarios):
     print(f"SCENARIO {scenario_idx}: {scenario.name}")
     print(f"{'=' * 80}")
 
-    controllers = [LogicController() if state.get('team', 0) == 1 else LogicController02() for state in
+    controllers = [LogicController() if state.get('team', 0) == 1 else LogicController03() for state in
                    scenario.ship_states]
 
     for ij in range(2):
@@ -79,9 +79,9 @@ for scenario_idx, scenario in enumerate(custom_scenarios):
             asteroids_team1 = result["asteroids_hit"][0]
             asteroids_team2 = result["asteroids_hit"][1]
             if asteroids_team1 > asteroids_team2:
-                print(f'Winner: LogicController (Team 1) with {asteroids_team1} asteroids hit vs {asteroids_team2}')
+                print(f'Winner: {controllers[0].name} (Team 1) with {asteroids_team1} asteroids hit vs {asteroids_team2}')
             elif asteroids_team2 > asteroids_team1:
-                print(f'Winner: MyAIController2 (Team 2) with {asteroids_team2} asteroids hit vs {asteroids_team1}')
+                print(f'Winner: {controllers[1].name} (Team 2) with {asteroids_team2} asteroids hit vs {asteroids_team1}')
             else:
                 print(f'Tie: Both teams hit {asteroids_team1} asteroids')
         else:
@@ -102,17 +102,17 @@ total_time = sum(r['eval_time'] for r in all_results)
 
 print(f"Total scenarios run: {len(all_results)}")
 print(
-    f"Team 1 (LogicController) - Total asteroids hit: {total_asteroids_team1}, Total deaths: {total_deaths_team1}, Average accuracy: {avg_accuracy_team1:.2%}")
+    f"Team 1 ({controllers[0].name}) - Total asteroids hit: {total_asteroids_team1}, Total deaths: {total_deaths_team1}, Average accuracy: {avg_accuracy_team1:.2%}")
 print(
-    f"Team 2 (MyAIController2) - Total asteroids hit: {total_asteroids_team2}, Total deaths: {total_deaths_team2}, Average accuracy: {avg_accuracy_team2:.2%}")
+    f"Team 2 ({controllers[1].name}) - Total asteroids hit: {total_asteroids_team2}, Total deaths: {total_deaths_team2}, Average accuracy: {avg_accuracy_team2:.2%}")
 print(f"Total evaluation time: {total_time:.2f}s")
 
 if total_asteroids_team1 > total_asteroids_team2:
     print(
-        f"\nOverall Winner: Team 1 (LogicController) with {total_asteroids_team1} asteroids hit vs {total_asteroids_team2}")
+        f"\nOverall Winner: Team 1 ({controllers[0].name}) with {total_asteroids_team1} asteroids hit vs {total_asteroids_team2}")
 elif total_asteroids_team2 > total_asteroids_team1:
     print(
-        f"\nOverall Winner: Team 2 (MyAIController2) with {total_asteroids_team2} asteroids hit vs {total_asteroids_team1}")
+        f"\nOverall Winner: Team 2 ({controllers[1].name}) with {total_asteroids_team2} asteroids hit vs {total_asteroids_team1}")
 else:
     print(f"\nOverall Tie: Both teams hit {total_asteroids_team1} asteroids")
 

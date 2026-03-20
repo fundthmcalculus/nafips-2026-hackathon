@@ -441,7 +441,7 @@ class LogicController01(KesslerController):
         Returns:
             str: name of this controller
         """
-        return "Fuzzy Test1"
+        return type(self).__name__
 
     # @property
     # def custom_sprite_path(self) -> str:

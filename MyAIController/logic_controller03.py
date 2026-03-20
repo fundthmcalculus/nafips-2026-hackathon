@@ -14,7 +14,7 @@ from .sa.sa import SA
 from .sa.util.helpers import trim_angle
 
 
-class LogicController(KesslerController):
+class LogicController03(KesslerController):
     def __init__(self):
         """
         Any variables or initialization desired for the controller can be set up here
@@ -86,8 +86,7 @@ class LogicController(KesslerController):
             else:
                 # Normal priority based on distance and angle
                 # Favor those directly in front to hit more
-                # Slightly more weight on distance for survival and clearing immediate area
-                threat_score = 100.0 + dist * 0.5 + rel_angle * 0.6 + (asteroid.size * 2.0)
+                threat_score = 100.0 + dist * 0.4 + rel_angle * 0.6 + (asteroid.size * 2.0)
             
             # Extra bonus for being currently aimed at - rapid snapping
             if rel_angle < 30.0:
@@ -223,11 +222,6 @@ class LogicController(KesslerController):
         
         # update the situational awareness with current information
         self.sa.update(ship_state, game_state)
-
-        # Clear shot asteroids periodically
-        if game_state.time - self.last_shot_clear_time > 0.5:
-            self.shot_asteroids.clear()
-            self.last_shot_clear_time = game_state.time
 
         # Mine laying strategy
         # 1) If I am near another ship
@@ -433,7 +427,7 @@ class LogicController(KesslerController):
         Returns:
             str: name of this controller
         """
-        return "LogicController_Optimized"
+        return type(self).__name__
 
     # @property
     # def custom_sprite_path(self) -> str:
