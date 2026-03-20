@@ -2,7 +2,7 @@
 # Copyright © 2022 Thales. All Rights Reserved.
 # NOTICE: This file is subject to the license agreement defined in file 'LICENSE', which is part of
 # this source code package.
-
+import os
 import sys
 
 from MyAIController.logic_controller import LogicController
@@ -20,7 +20,7 @@ all_results = []
 
 # Disable graphics for faster execution across all scenarios
 game_settings = {'perf_tracker': True,
-                 'graphics_type': GraphicsType.NoGraphics,  # Change to GraphicsType.Tkinter to visualize
+                 'graphics_type': GraphicsType.NoGraphics if not os.getenv('SHOW_GAME') else GraphicsType.Tkinter,  # Change to GraphicsType.Tkinter to visualize
                  'realtime_multiplier': 6,
                  'graphics_obj': None,
                  'frequency': 60}

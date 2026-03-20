@@ -323,12 +323,12 @@ class LogicController(KesslerController):
             ast_dist = asteroid.distance_wrap
             if ast_dist > 0:
                 angular_width = np.degrees(np.arctan2(asteroid.radius + 2.0, ast_dist))
-                # Very generous cone to maximize hit rate while turning
-                if abs(rel_angle_to_ast) < max(angular_width, 25.0):
+                # Fire if aiming well OR if close enough that even imperfect aim will hit
+                # For closer asteroids, relax the aiming requirement
+                max_aim_angle = max(angular_width * 1.5, 30.0) if ast_dist < 300 else max(angular_width, 25.0)
+                if abs(rel_angle_to_ast) < max_aim_angle:
                     fire = True
                     break
-
-        drop_mine = False
 
         # Scale turn rate for more aggressive aiming
         # Use high gain and a floor to snap between targets
@@ -433,7 +433,7 @@ class LogicController(KesslerController):
         Returns:
             str: name of this controller
         """
-        return "LogicController_Optimized"
+        return "LogicController"
 
     # @property
     # def custom_sprite_path(self) -> str:
