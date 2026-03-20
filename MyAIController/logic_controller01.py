@@ -14,7 +14,7 @@ from .sa.sa import SA
 from .sa.util.helpers import trim_angle
 
 
-class LogicController(KesslerController):
+class LogicController01(KesslerController):
     def __init__(self):
         """
         Any variables or initialization desired for the controller can be set up here
@@ -28,10 +28,18 @@ class LogicController(KesslerController):
 
     def get_most_threatening_asteroid(self, game_state: GameState, asteroids=None):
         """
-        Find the asteroid most likely to hit the ship or one that is easily targetable.
+        Find the asteroid most likely to hit the ship based on its bearing relative to ship heading
+        and distance. Prioritizes asteroids that are close and directly in front of the ship.
+
+        Arguments:
+            game_state: GameState object containing current game state
+            asteroids: Optional list of asteroids to consider. If None, uses nearest 10.
+
+        Returns:
+            Asteroid object that is most threatening, or None if no asteroids exist
         """
         if asteroids is None:
-            asteroids = self.sa.ownship.asteroids
+            asteroids = self.sa.ownship.nearest_n(-1)
 
         if not asteroids:
             return None
@@ -39,62 +47,68 @@ class LogicController(KesslerController):
         best_asteroid = None
         best_threat_score = float('inf')
 
-        ship_x, ship_y = self.sa.ownship.position
-        ship_vx, ship_vy = self.sa.ownship.velocity
-        ship_heading = self.sa.ownship.heading
-        ship_radius = self.sa.ownship.radius
-        map_width, map_height = game_state['map_size']
+        # Get map dimensions for wrap-around calculations
+        map_width = game_state['map_size'][0]
+        map_height = game_state['map_size'][1]
 
         for asteroid in asteroids:
-            # Position relative to ship with wrap-around
-            ast_x, ast_y = asteroid.position_wrap
-            dx = ast_x - ship_x
-            dy = ast_y - ship_y
-            
-            # Distance
-            dist = asteroid.distance_wrap
-            
-            # Relative velocity
-            rel_vx = asteroid.velocity[0] - ship_vx
-            rel_vy = asteroid.velocity[1] - ship_vy
-            
-            # Time to closest approach
-            rel_vel_sq = rel_vx**2 + rel_vy**2
-            if rel_vel_sq > 0.1:
-                t_ca = -(dx * rel_vx + dy * rel_vy) / rel_vel_sq
-            else:
-                t_ca = -1
-            
-            collision_imminent = False
-            if 0 < t_ca < 5.0:
-                # Closest approach distance
-                ca_dx = dx + rel_vx * t_ca
-                ca_dy = dy + rel_vy * t_ca
-                ca_dist = np.sqrt(ca_dx**2 + ca_dy**2)
-                
-                if ca_dist < (ship_radius + asteroid.radius + 30.0):
-                    collision_imminent = True
+            # Calculate relative angle to asteroid
+            relative_angle = trim_angle(asteroid.bearing - self.sa.ownship.heading)
 
-            # Calculate bearing and relative angle
-            angle_to_ast = asteroid.bearing_wrap
-            rel_angle = abs(trim_angle(angle_to_ast - ship_heading))
-            
-            # Threat score calculation
-            if collision_imminent:
-                # High priority for imminent collisions
-                # Favor closer collisions and those more directly in front
-                threat_score = t_ca * 5.0 + dist * 0.05 + rel_angle * 0.1
-            else:
-                # Normal priority based on distance and angle
-                # We want to favor asteroids that are close and easy to hit
-                # Higher score for asteroids behind us
-                # Also consider asteroid size: smaller ones are easier to clear, but bigger ones split.
-                # Prioritizing small ones might clear the immediate area faster.
-                threat_score = 100.0 + dist * 0.5 + rel_angle * 1.0 + (asteroid.size * 5.0)
+            # Calculate if the asteroid is going to hit the ship
+            # Compute relative velocity between asteroid and ship
+            rel_vel_x = asteroid.velocity[0] - self.sa.ownship.velocity[0]
+            rel_vel_y = asteroid.velocity[1] - self.sa.ownship.velocity[1]
 
-            if threat_score < best_threat_score:
-                best_threat_score = threat_score
-                best_asteroid = asteroid
+            # Compute relative position WITH WRAP-AROUND
+            dx = asteroid.position[0] - self.sa.ownship.position[0]
+            dy = asteroid.position[1] - self.sa.ownship.position[1]
+
+            # Apply wrap-around: choose shortest path
+            if abs(dx) > map_width / 2:
+                dx = dx - np.sign(dx) * map_width
+            if abs(dy) > map_height / 2:
+                dy = dy - np.sign(dy) * map_height
+
+            rel_pos_x = dx
+            rel_pos_y = dy
+
+            # Calculate time to closest approach using relative motion
+            rel_vel_mag_sq = rel_vel_x ** 2 + rel_vel_y ** 2
+            if rel_vel_mag_sq > 0.001:  # Avoid division by zero
+                time_to_closest = -(rel_pos_x * rel_vel_x + rel_pos_y * rel_vel_y) / rel_vel_mag_sq
+
+                # Only consider asteroids moving toward the ship (positive time)
+                if time_to_closest > 0 and time_to_closest < 10.0:  # Within 10 seconds
+                    # Calculate closest approach distance
+                    closest_x = rel_pos_x + rel_vel_x * time_to_closest
+                    closest_y = rel_pos_y + rel_vel_y * time_to_closest
+                    closest_distance = np.sqrt(closest_x ** 2 + closest_y ** 2)
+
+                    # Consider collision threshold (ship radius + asteroid radius + safety margin)
+                    collision_threshold = 50.0  # Adjust based on game parameters
+                    will_hit = closest_distance < collision_threshold
+                else:
+                    will_hit = False
+            else:
+                will_hit = False
+
+            if will_hit:
+                # Threat score combines distance and angle alignment
+                # Lower score means more threatening
+                # Asteroids directly ahead (angle near 0) are most threatening
+                angle_factor = abs(relative_angle) / 180.0  # Normalize to [0, 1]
+                distance_factor = asteroid.distance / 1000.0  # Normalize distance
+
+                # Weight angle more heavily than distance for collision threat
+                # Weight smaller asteroids more to clear a path
+                # Smaller asteroids get lower threat scores (higher priority)
+                size_factor = asteroid.size / 4.0  # Normalize size (1-4) to [0.25, 1.0]
+                threat_score = (angle_factor * 2.0) + (distance_factor * 0.5) + (size_factor * 1.5)
+
+                if threat_score < best_threat_score:
+                    best_threat_score = threat_score
+                    best_asteroid = asteroid
 
         return best_asteroid
 
@@ -102,49 +116,49 @@ class LogicController(KesslerController):
         """
         Calculate the intercept point where we should aim to hit a moving asteroid.
         Uses iterative approach to solve the intercept problem.
+
+        Arguments:
+            asteroid: The asteroid object to intercept
+            bullet_speed: Speed of the bullet (default 800.0)
+
+        Returns:
+            tuple: (intercept_x, intercept_y, time_to_intercept) or (None, None, None) if no solution
         """
         # Current positions
         ship_x, ship_y = self.sa.ownship.position
-        ship_vx, ship_vy = self.sa.ownship.velocity
-        
-        # Asteroid position with wrap-around relative to ship
-        ast_x, ast_y = asteroid.position_wrap
+        ast_x, ast_y = asteroid.position
         ast_vx, ast_vy = asteroid.velocity
 
-        # Relative velocity (bullet velocity will be relative to ship's velocity at time of firing)
-        # In kesslergame, bullet velocity = ship_velocity + bullet_speed * [cos(heading), sin(heading)]
-        # So we want to solve: Ship_Pos + Ship_Vel * t + Bullet_Vel_Rel * t = Ast_Pos + Ast_Vel * t
-        # (Ship_Pos - Ast_Pos) + (Ship_Vel - Ast_Vel) * t + Bullet_Vel_Rel * t = 0
-        # Let dP = Ast_Pos - Ship_Pos, dV = Ast_Vel - Ship_Vel
-        # Bullet_Vel_Rel * t = dP + dV * t
-        # |Bullet_Vel_Rel|^2 * t^2 = |dP + dV * t|^2
-        # bullet_speed^2 * t^2 = |dP|^2 + 2(dP . dV) * t + |dV|^2 * t^2
-        # (bullet_speed^2 - |dV|^2) * t^2 - 2(dP . dV) * t - |dP|^2 = 0
-        
+        # Initial guess: time based on current distance
         dx = ast_x - ship_x
         dy = ast_y - ship_y
-        dvx = ast_vx - ship_vx
-        dvy = ast_vy - ship_vy
-        
-        a = bullet_speed**2 - (dvx**2 + dvy**2)
-        b = -2 * (dx * dvx + dy * dvy)
-        c = -(dx**2 + dy**2)
-        
-        discriminant = b**2 - 4*a*c
-        if discriminant < 0:
-            return ast_x, ast_y, 0.0 # Should not happen with high bullet speed
-        
-        t1 = (-b + np.sqrt(discriminant)) / (2*a)
-        t2 = (-b - np.sqrt(discriminant)) / (2*a)
-        
-        t = max(t1, t2)
-        if t < 0:
-            t = 0
-            
-        predicted_x = ast_x + ast_vx * t
-        predicted_y = ast_y + ast_vy * t
-        
-        return predicted_x, predicted_y, t
+        distance = np.sqrt(dx ** 2 + dy ** 2)
+        time_to_intercept = distance / bullet_speed
+
+        # Iteratively refine the intercept time (up to 5 iterations)
+        for _ in range(10):
+            # Predict asteroid position at intercept time
+            predicted_x = ast_x + ast_vx * time_to_intercept
+            predicted_y = ast_y + ast_vy * time_to_intercept
+
+            # Calculate distance to predicted position
+            dx = predicted_x - ship_x
+            dy = predicted_y - ship_y
+            distance = np.sqrt(dx ** 2 + dy ** 2)
+
+            # Update time estimate
+            new_time = distance / bullet_speed
+
+            # Check for convergence
+            if abs(new_time - time_to_intercept) < 0.01:
+                return predicted_x, predicted_y, time_to_intercept
+
+            time_to_intercept = new_time
+
+        # Return the best estimate even if not fully converged
+        predicted_x = ast_x + ast_vx * time_to_intercept
+        predicted_y = ast_y + ast_vy * time_to_intercept
+        return predicted_x, predicted_y, time_to_intercept
 
     def find_escape_target(self, game_state: GameState):
         """
@@ -303,27 +317,25 @@ class LogicController(KesslerController):
         ship_x, ship_y = self.sa.ownship.position
         dx = intercept_x - ship_x
         dy = intercept_y - ship_y
-        
-        # We need to account for wrap-around in the intercept angle as well
-        # But calculate_intercept_point already used position_wrap relative to ship.
-        # So (intercept_x, intercept_y) is in the same "frame" as ship_x, ship_y if we are careful.
-        # Actually, if intercept_x = ast_x_wrap + ast_vx * t, then dx = ast_x_wrap - ship_x + ast_vx * t.
-        # ast_x_wrap - ship_x is the shortest dx already.
-        
-        angle_to_intercept = np.degrees(np.arctan2(-dx, dy)) # Consistent with saasteroids bearing
+        angle_to_intercept = np.degrees(np.arctan2(dy, dx))-90.0
 
         # Calculate relative angle to intercept point (relative to ship heading)
         relative_angle = trim_angle(angle_to_intercept - self.sa.ownship.heading)
 
         for asteroid in self.sa.ownship.asteroids:
             # Get relative bearing to asteroid with wrap-around
-            rel_angle_to_ast = trim_angle(asteroid.bearing_wrap - self.sa.ownship.heading)
+            ast_x, ast_y = asteroid.position_wrap
+            dx_ast = ast_x - ship_x
+            dy_ast = ast_y - ship_y
+            angle_to_asteroid = np.degrees(np.arctan2(dy_ast, dx_ast)) - 90.0
+            rel_angle_to_ast = trim_angle(angle_to_asteroid - self.sa.ownship.heading)
             
             # If the asteroid is within its angular width from our heading, we are "aimed" at it.
+            # Angular width = arctan(radius / distance)
             ast_dist = asteroid.distance_wrap
             if ast_dist > 0:
                 angular_width = np.degrees(np.arctan2(asteroid.radius, ast_dist))
-                if abs(rel_angle_to_ast) < max(angular_width, 2.0): # Minimum 2 degrees tolerance
+                if abs(rel_angle_to_ast) < angular_width:
                     fire = True
                     break
 
@@ -386,39 +398,34 @@ class LogicController(KesslerController):
                     
                 return thrust, turn_rate, fire, should_drop_mine
 
-        # Accelerate away from the nearest asteroid if it's too close
-        # or use thrust to maintain a good firing distance.
+        # Back away from the nearest asteroid
+        # Find the actual nearest asteroid (not necessarily the most threatening)
+        true_nearest_asteroid = self.sa.ownship.nearest_n(1)[0]
         
-        # Scale thrust based on distance to nearest asteroid
-        true_nearest_asteroid = self.sa.ownship.nearest_n_wrap(1)[0]
-        asteroid_bearing = true_nearest_asteroid.bearing_wrap
+        # Calculate bearing to nearest asteroid relative to ship heading
+        # Note: self.sa.ownship.heading is already trimmed
+        asteroid_bearing = true_nearest_asteroid.bearing
         relative_asteroid_bearing = trim_angle(asteroid_bearing - self.sa.ownship.heading)
-        distance_to_asteroid = true_nearest_asteroid.distance_wrap
         
-        # Safe distance we want to keep
-        safe_distance = 150.0
-        
-        if distance_to_asteroid < safe_distance:
-            # We are too close.
-            # If the asteroid is in front (+/- 90 deg), back away.
-            # If it's behind, drive forward.
-            thrust_scale = 1.0 - (distance_to_asteroid / safe_distance)
-            if abs(relative_asteroid_bearing) < 90:
-                thrust = -ship_state["thrust_range"][1] * thrust_scale
-            else:
-                thrust = ship_state["thrust_range"][1] * thrust_scale
-        else:
-            # If we are at a safe distance, check if we are moving towards something dangerous
-            ship_speed = self.sa.ownship.speed
-            
-            # Reduce max speed to have more time to react and turn
-            if ship_speed > 40:
-                thrust = -ship_state["thrust_range"][1] * 0.4
-            else:
-                thrust = 0.0
+        # Decision: drive forward or backward based upon the optimal escape trajectory.
+        # If asteroid is in front (+/- 90 deg), drive backward.
+        # If asteroid is behind, drive forward.
+        distance_to_asteroid = true_nearest_asteroid.distance
+        # Scale thrust based on distance - only move if asteroid is reasonably close
+        distance_threshold = 150.0  # Only react if asteroid is within this distance
 
-        # Override fire if we are pointing almost at our target
-        fire = fire or bool(abs(relative_angle) < 5.0)
+        if distance_to_asteroid < distance_threshold:
+            # Scale thrust proportionally: closer asteroids get stronger thrust
+            thrust_scale = 1.0 - (distance_to_asteroid / distance_threshold)
+
+            if abs(relative_asteroid_bearing) < 90:
+                thrust = -ship_state["thrust_range"][1] * thrust_scale  # Back away, scaled by distance
+            else:
+                thrust = ship_state["thrust_range"][1] * thrust_scale  # Drive forward, scaled by distance
+        else:
+            thrust = 0.0  # Don't move if asteroid is far away
+
+        fire = fire or bool(abs(relative_angle) < 15.0)
         drop_mine = should_drop_mine
 
         if fire and nearest_asteroid:

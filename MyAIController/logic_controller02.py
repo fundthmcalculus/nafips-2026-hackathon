@@ -14,7 +14,7 @@ from .sa.sa import SA
 from .sa.util.helpers import trim_angle
 
 
-class LogicController(KesslerController):
+class LogicController02(KesslerController):
     def __init__(self):
         """
         Any variables or initialization desired for the controller can be set up here

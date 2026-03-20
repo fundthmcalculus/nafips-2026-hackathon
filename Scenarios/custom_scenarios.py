@@ -1,12 +1,14 @@
 from kesslergame import Scenario
 import numpy as np
 
+map_size = (1000, 800)
+ship_pos_1 = (400, 400)
+ship_pos_2 = (600, 400)
+
 def create_incoming_field_scenario():
     """
     Scenario 1: Starting in the middle of a field of asteroids that are all moving in on my position
     """
-    map_size = (1000, 800)
-    ship_pos = (500, 400)
     asteroid_states = []
     
     # Create a circle of asteroids moving towards the center
@@ -16,8 +18,22 @@ def create_incoming_field_scenario():
         angle_deg = i * (360 / num_asteroids)
         angle_rad = np.radians(angle_deg)
         # Position on the circle
-        x = ship_pos[0] + radius * np.cos(angle_rad)
-        y = ship_pos[1] + radius * np.sin(angle_rad)
+        x = ship_pos_1[0] + radius * np.cos(angle_rad)
+        y = ship_pos_1[1] + radius * np.sin(angle_rad)
+        # Velocity angle points towards the ship (opposite to position angle)
+        vel_angle = (angle_deg + 180) % 360
+        asteroid_states.append({
+            'position': (x, y),
+            'angle': vel_angle,
+            'speed': 80,
+            'size': 3
+        })
+    for i in range(num_asteroids):
+        angle_deg = i * (360 / num_asteroids)
+        angle_rad = np.radians(angle_deg)
+        # Position on the circle
+        x = ship_pos_2[0] + radius * np.cos(angle_rad)
+        y = ship_pos_2[1] + radius * np.sin(angle_rad)
         # Velocity angle points towards the ship (opposite to position angle)
         vel_angle = (angle_deg + 180) % 360
         asteroid_states.append({
@@ -29,7 +45,8 @@ def create_incoming_field_scenario():
         
     return Scenario(name='Incoming Field',
                     asteroid_states=asteroid_states,
-                    ship_states=[{'position': ship_pos, 'angle': 90, 'lives': 3, 'team': 1}],
+                    ship_states=[{'position': ship_pos_1, 'angle': 90, 'lives': 3, 'team': 1},
+                                 {'position': ship_pos_2, 'angle': 90, 'lives': 3, 'team': 2}],
                     map_size=map_size,
                     time_limit=60)
 
@@ -37,7 +54,6 @@ def create_zigzag_scenario():
     """
     Scenario 2: A progressively moving left-right field of asteroids with a zig-zag clear path
     """
-    map_size = (1000, 800)
     asteroid_states = []
     
     # Fill the screen with asteroids except for a zig-zag path
@@ -72,7 +88,8 @@ def create_zigzag_scenario():
                 
     return Scenario(name='Zig-Zag Path',
                     asteroid_states=asteroid_states,
-                    ship_states=[{'position': (500, 50), 'angle': 90, 'lives': 3, 'team': 1}],
+                    ship_states=[{'position': ship_pos_1, 'angle': 90, 'lives': 3, 'team': 1},
+                                 {'position': ship_pos_2, 'angle': 90, 'lives': 3, 'team': 2}],
                     map_size=map_size,
                     time_limit=60)
 
@@ -80,7 +97,6 @@ def create_crossing_lines_scenario():
     """
     Scenario 3: A line of asteroids at the top and bottom of the screen which move through each other
     """
-    map_size = (1000, 800)
     asteroid_states = []
     
     num_per_line = 10
@@ -111,7 +127,8 @@ def create_crossing_lines_scenario():
         
     return Scenario(name='Crossing Lines',
                     asteroid_states=asteroid_states,
-                    ship_states=[{'position': (500, 400), 'angle': 0, 'lives': 3, 'team': 1}],
+                    ship_states=[{'position': ship_pos_1, 'angle': 0, 'lives': 3, 'team': 1},
+                                 {'position': ship_pos_2, 'angle': 0, 'lives': 3, 'team': 2}],
                     map_size=map_size,
                     time_limit=60)
 
@@ -119,7 +136,6 @@ def create_closing_walls_scenario():
     """
     Scenario 4: A line of asteroids on each side of the screen, the middle of the screen, and the outside ones move in.
     """
-    map_size = (1000, 800)
     asteroid_states = []
     
     num_per_line = 8
@@ -154,7 +170,8 @@ def create_closing_walls_scenario():
         
     return Scenario(name='Closing Walls',
                     asteroid_states=asteroid_states,
-                    ship_states=[{'position': (300, 400), 'angle': 90, 'lives': 3, 'team': 1}],
+                    ship_states=[{'position': ship_pos_1, 'angle': 90, 'lives': 3, 'team': 1},
+                                 {'position': ship_pos_2, 'angle': 90, 'lives': 3, 'team': 2}],
                     map_size=map_size,
                     time_limit=60)
 
@@ -162,17 +179,67 @@ def create_ram_scenario():
     """
     Scenario for testing ramming: Two ships, one with fewer lives than the other, starting close together.
     """
-    map_size = (1000, 800)
-    ship_pos_1 = (400, 400)
-    ship_pos_2 = (600, 400)
-    
-    # Needs at least one asteroid to be valid
-    asteroid_states = [{
+
+    # Create a handful of stationary asteroids around the perimeter
+    asteroid_states = []
+
+    # Top edge asteroids
+    asteroid_states.append({
+        'position': (200, 50),
+        'angle': 0,
+        'speed': 0,
+        'size': 2
+    })
+    asteroid_states.append({
+        'position': (800, 50),
+        'angle': 0,
+        'speed': 0,
+        'size': 2
+    })
+
+    # Bottom edge asteroids
+    asteroid_states.append({
+        'position': (200, 750),
+        'angle': 0,
+        'speed': 0,
+        'size': 2
+    })
+    asteroid_states.append({
+        'position': (800, 750),
+        'angle': 0,
+        'speed': 0,
+        'size': 2
+    })
+
+    # Left edge asteroids
+    asteroid_states.append({
+        'position': (50, 400),
+        'angle': 0,
+        'speed': 0,
+        'size': 2
+    })
+
+    # Right edge asteroids
+    asteroid_states.append({
+        'position': (950, 400),
+        'angle': 0,
+        'speed': 0,
+        'size': 2
+    })
+
+    # Corner asteroids for good measure
+    asteroid_states.append({
+        'position': (100, 100),
+        'angle': 0,
+        'speed': 0,
+        'size': 1
+    })
+    asteroid_states.append({
         'position': (900, 700),
         'angle': 0,
         'speed': 0,
         'size': 1
-    }]
+    })
     
     return Scenario(name='Ramming Test',
                     asteroid_states=asteroid_states,
