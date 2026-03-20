@@ -3,24 +3,22 @@
 # NOTICE: This file is subject to the license agreement defined in file 'LICENSE', which is part of
 # this source code package.
 
-from kesslergame import KesslerController
 from typing import Dict, Tuple
+
+import numpy as np
+from kesslergame import KesslerController
+from kesslergame.state_models import GameState
+
 # from MyAIController.ai.sa.sa import SA
 from .sa.sa import SA
 from .sa.util.helpers import trim_angle
-import skfuzzy.control as ctrl
-import skfuzzy as skf
-import numpy as np
 
 
 class LogicController(KesslerController):
-    def __init__(self, chromosome=None):
+    def __init__(self):
         """
         Any variables or initialization desired for the controller can be set up here
         """
-        self.chromosome = chromosome
-        self.aiming_fis = None
-        self.aiming_fis_sim = None
         self.normalization_dist = None
         self.sa = SA()
 
@@ -28,135 +26,30 @@ class LogicController(KesslerController):
         self.last_shot_clear_time = 60
         self.clear_frames = 60
 
-        # I put this in a separate function for cleanliness in the init procedure, but this just calls the functions
-        # that create your FIS functions
-        self.create_fuzzy_systems()
-
-    def create_aiming_fis(self):
-        # If we don't have a chromosome to get values from, use "default" values
-        if not self.chromosome:
-            # input 1 - distance to asteroid
-            distance = ctrl.Antecedent(np.linspace(0.0, 1.0, 11), "distance")
-            # input 2 - angle to asteroid (relative to ship heading)
-            angle = ctrl.Antecedent(np.linspace(-1.0, 1.0, 11), "angle")
-
-            # output - desired relative angle to match to aim ship at asteroid
-            aiming_angle = ctrl.Consequent(np.linspace(-1.0, 1.0, 11), "aiming_angle")
-
-            # creating 3 equally spaced membership functions for the inputs
-            distance.automf(3, names=["close", "medium", "far"])
-            angle.automf(3, names=["negative", "zero", "positive"])
-
-            # creating 3 triangular membership functions for the output
-            aiming_angle["negative"] = skf.trimf(aiming_angle.universe, [-1.0, -1.0, 0.0])
-            aiming_angle["zero"] = skf.trimf(aiming_angle.universe, [-1.0, 0.0, 1.0])
-            aiming_angle["positive"] = skf.trimf(aiming_angle.universe, [0.0, 1.0, 1.0])
-
-            # creating the rule base for the fuzzy system
-            rule1 = ctrl.Rule(distance["close"] & angle["negative"], aiming_angle["negative"])
-            rule2 = ctrl.Rule(distance["medium"] & angle["negative"], aiming_angle["negative"])
-            rule3 = ctrl.Rule(distance["far"] & angle["negative"], aiming_angle["negative"])
-            rule4 = ctrl.Rule(distance["close"] & angle["zero"], aiming_angle["negative"])
-            rule5 = ctrl.Rule(distance["medium"] & angle["zero"], aiming_angle["positive"])
-            rule6 = ctrl.Rule(distance["far"] & angle["zero"], aiming_angle["positive"])
-            rule7 = ctrl.Rule(distance["close"] & angle["positive"], aiming_angle["positive"])
-            rule8 = ctrl.Rule(distance["medium"] & angle["positive"], aiming_angle["positive"])
-            rule9 = ctrl.Rule(distance["far"] & angle["positive"], aiming_angle["positive"])
-
-            rules = [rule1, rule2, rule3, rule4, rule5, rule6, rule7, rule8, rule9]
-            # creating a FIS controller from the rules + membership functions
-            self.aiming_fis = ctrl.ControlSystem(rules)
-            # creating a controller sim to evaluate the FIS
-            self.aiming_fis_sim = ctrl.ControlSystemSimulation(self.aiming_fis)
-        else:
-            # create FIS using GA chromosome
-            # input 1 - distance to asteroid
-            distance = ctrl.Antecedent(np.linspace(0.0, 1.0, 11), "distance")
-            # input 2 - angle to asteroid (relative to ship heading)
-            angle = ctrl.Antecedent(np.linspace(-1.0, 1.0, 11), "angle")
-
-            # output - desired relative angle to match to aim ship at asteroid
-            aiming_angle = ctrl.Consequent(np.linspace(-1.0, 1.0, 11), "aiming_angle")
-
-            # Create membership functions from chromosome - Note that we're constraining the triangular membership
-            # functions to have Ruspini partitioning
-            # create distance membership functions from chromosome
-            distance["close"] = skf.trimf(distance.universe, [-1.0, -1.0, self.chromosome[0]])
-            distance["medium"] = skf.trimf(distance.universe, [-1.0, self.chromosome[0], 1.0])
-            distance["far"] = skf.trimf(distance.universe, [self.chromosome[0], 1.0, 1.0])
-            # create angle membership functions from chromosome
-            angle["negative"] = skf.trimf(angle.universe, [-1.0, -1.0, self.chromosome[1]*2-1])
-            angle["zero"] = skf.trimf(angle.universe, [-1.0, self.chromosome[1]*2-1, 1.0])
-            angle["positive"] = skf.trimf(angle.universe, [self.chromosome[1]*2-1, 1.0, 1.0])
-
-            # creating 3 triangular membership functions for the output
-            aiming_angle["negative"] = skf.trimf(aiming_angle.universe, [-1.0, -1.0, self.chromosome[2]*2-1])
-            aiming_angle["zero"] = skf.trimf(aiming_angle.universe, [-1.0, self.chromosome[2]*2-1, 1.0])
-            aiming_angle["positive"] = skf.trimf(aiming_angle.universe, [self.chromosome[2]*2-1, 1.0, 1.0])
-
-            input1_mfs = [distance["close"], distance["medium"], distance["far"]]
-            input2_mfs = [angle["negative"], angle["zero"], angle["positive"]]
-
-            # create list of output membership functions to index into to create rule antecedents
-            output_mfs = [aiming_angle["negative"], aiming_angle["zero"], aiming_angle["positive"]]
-
-            # bin the values associated with rules - this is done so we can use the floats in the chromosome DNA
-            # associated with the output membership functions in order to index into our predefined output membership
-            # function set - i.e. the "output_mfs" list
-            bins = np.array([0.0, 0.33333, 0.66666, 1.0])
-            num_mfs1 = len(input1_mfs)
-            num_mfs2 = len(input2_mfs)
-            num_rules = num_mfs1*num_mfs2
-            # grabbing the corresponding DNA values that determine the output mfs from the chromosome
-            rules_raw = self.chromosome[3:3+num_rules]
-            # binning the values to convert the floats to integer values to be used as indices - a somewhat hacky way
-            # using direct integer encodings would be nicer and probably perform better - opportunity for improvement
-            ind = np.digitize(rules_raw, bins, right=True)-1
-            ind = [int(min(max(idx, 0), 2)) for idx in ind]
-
-
-            count = 0
-            # mapping the DNA indices to output_mfs
-            try:
-                rule_consequents_linear = [output_mfs[idx] for idx in ind]
-            except:
-                print(ind)
-                print(rules_raw)
-            # constructing the rules by combining our antecedents (conjunction of input mfs) with the corresponding
-            # consequents (output mfs)
-            rules = []
-
-            for jj in range(num_mfs2):
-                for ii in range(num_mfs1):
-                    rules.append(ctrl.Rule(input1_mfs[ii] & input2_mfs[jj], rule_consequents_linear[count]))
-
-            # creating a FIS controller from the rules + membership functions
-            self.aiming_fis = ctrl.ControlSystem(rules)
-            # creating a controller sim to evaluate the FIS
-            self.aiming_fis_sim = ctrl.ControlSystemSimulation(self.aiming_fis)
-
-    def create_fuzzy_systems(self):
-        self.create_aiming_fis()
-
-    def get_most_threatening_asteroid(self, asteroids=None):
+    def get_most_threatening_asteroid(self, game_state: GameState, asteroids=None):
         """
         Find the asteroid most likely to hit the ship based on its bearing relative to ship heading
         and distance. Prioritizes asteroids that are close and directly in front of the ship.
 
         Arguments:
+            game_state: GameState object containing current game state
             asteroids: Optional list of asteroids to consider. If None, uses nearest 10.
 
         Returns:
             Asteroid object that is most threatening, or None if no asteroids exist
         """
         if asteroids is None:
-            asteroids = self.sa.ownship.nearest_n(10)
+            asteroids = self.sa.ownship.nearest_n(-1)
 
         if not asteroids:
             return None
 
         best_asteroid = None
         best_threat_score = float('inf')
+
+        # Get map dimensions for wrap-around calculations
+        map_width = game_state['map_size'][0]
+        map_height = game_state['map_size'][1]
 
         for asteroid in asteroids:
             # Calculate relative angle to asteroid
@@ -167,9 +60,18 @@ class LogicController(KesslerController):
             rel_vel_x = asteroid.velocity[0] - self.sa.ownship.velocity[0]
             rel_vel_y = asteroid.velocity[1] - self.sa.ownship.velocity[1]
 
-            # Compute relative position
-            rel_pos_x = asteroid.position[0] - self.sa.ownship.position[0]
-            rel_pos_y = asteroid.position[1] - self.sa.ownship.position[1]
+            # Compute relative position WITH WRAP-AROUND
+            dx = asteroid.position[0] - self.sa.ownship.position[0]
+            dy = asteroid.position[1] - self.sa.ownship.position[1]
+
+            # Apply wrap-around: choose shortest path
+            if abs(dx) > map_width / 2:
+                dx = dx - np.sign(dx) * map_width
+            if abs(dy) > map_height / 2:
+                dy = dy - np.sign(dy) * map_height
+
+            rel_pos_x = dx
+            rel_pos_y = dy
 
             # Calculate time to closest approach using relative motion
             rel_vel_mag_sq = rel_vel_x ** 2 + rel_vel_y ** 2
@@ -199,7 +101,10 @@ class LogicController(KesslerController):
                 distance_factor = asteroid.distance / 1000.0  # Normalize distance
 
                 # Weight angle more heavily than distance for collision threat
-                threat_score = (angle_factor * 2.0) + (distance_factor * 0.5)
+                # Weight smaller asteroids more to clear a path
+                # Smaller asteroids get lower threat scores (higher priority)
+                size_factor = asteroid.size / 4.0  # Normalize size (1-4) to [0.25, 1.0]
+                threat_score = (angle_factor * 2.0) + (distance_factor * 0.5) + (size_factor * 1.5)
 
                 if threat_score < best_threat_score:
                     best_threat_score = threat_score
@@ -231,7 +136,7 @@ class LogicController(KesslerController):
         time_to_intercept = distance / bullet_speed
 
         # Iteratively refine the intercept time (up to 5 iterations)
-        for _ in range(5):
+        for _ in range(10):
             # Predict asteroid position at intercept time
             predicted_x = ast_x + ast_vx * time_to_intercept
             predicted_y = ast_y + ast_vy * time_to_intercept
@@ -255,13 +160,72 @@ class LogicController(KesslerController):
         predicted_y = ast_y + ast_vy * time_to_intercept
         return predicted_x, predicted_y, time_to_intercept
 
-    def actions(self, ship_state: Dict, game_state: Dict) -> Tuple[float, float, bool, bool]:
+    def find_escape_target(self, game_state: GameState):
+        """
+        Find the nearest empty region reachable within 3 seconds.
+        """
+        ship_x, ship_y = self.sa.ownship.position
+        map_width, map_height = game_state['map_size']
+        
+        # Max reachable distance in 3 seconds
+        # Using a conservative estimate: 
+        # max_accel = 480 m/s^2, time = 3s. dist = 0.5 * 480 * 3^2 = 2160 m (large!)
+        # But we are also limited by max speed (240 m/s). dist = 240 * 3 = 720 m.
+        # Let's search within 500-700m radius.
+        search_radius = 500.0
+        
+        # Sample points around the ship
+        num_samples = 16
+        candidate_points = []
+        for i in range(num_samples):
+            angle = 2 * np.pi * i / num_samples
+            # Sample at different distances
+            for r in [search_radius * 0.5, search_radius]:
+                px = (ship_x + r * np.cos(angle)) % map_width
+                py = (ship_y + r * np.sin(angle)) % map_height
+                candidate_points.append((px, py))
+        
+        best_point = None
+        max_min_dist = -1.0
+        
+        # Predicted asteroid positions in 3 seconds
+        predicted_asteroids = []
+        for asteroid in self.sa.ownship.asteroids:
+            ax, ay = asteroid.position
+            avx, avy = asteroid.velocity
+            # Predict position with wrap-around
+            p_ax = (ax + avx * 3.0) % map_width
+            p_ay = (ay + avy * 3.0) % map_height
+            predicted_asteroids.append((p_ax, p_ay, asteroid.radius))
+            
+        for px, py in candidate_points:
+            min_dist_to_asteroid = float('inf')
+            for ax, ay, radius in predicted_asteroids:
+                dx = px - ax
+                dy = py - ay
+                # Wrap-around distance
+                if abs(dx) > map_width / 2:
+                    dx = dx - np.sign(dx) * map_width
+                if abs(dy) > map_height / 2:
+                    dy = dy - np.sign(dy) * map_height
+                
+                dist = np.sqrt(dx**2 + dy**2) - radius
+                if dist < min_dist_to_asteroid:
+                    min_dist_to_asteroid = dist
+            
+            if min_dist_to_asteroid > max_min_dist:
+                max_min_dist = min_dist_to_asteroid
+                best_point = (px, py)
+        
+        return best_point
+
+    def actions(self, ship_state: Dict, game_state: GameState) -> Tuple[float, float, bool, bool]:
         """
         Method processed each time step by this controller to determine what control actions to take
 
         Arguments:
-            ship_state (dict): contains state information for your own ship
-            game_state (dict): contains state information for all objects in the game
+            ship_state (ShipState): contains state information for your own ship
+            game_state (GameState): contains state information for all objects in the game
 
         Returns:
             float: thrust control value
@@ -273,31 +237,75 @@ class LogicController(KesslerController):
         # update the situational awareness with current information
         self.sa.update(ship_state, game_state)
 
-
-        # Every 2 seconds, clear out shot asteroids in case we missed
-        if self.last_shot_clear_time > self.clear_frames:
-            self.shot_asteroids.clear()
-            self.last_shot_clear_time = 0
-        self.last_shot_clear_time += 1
-
-        # Filter out asteroids that have already been shot
-        current_asteroid_ids = {id(ast) for ast in self.sa.ownship.asteroids}
-        self.shot_asteroids = {ast_id for ast_id in self.shot_asteroids if ast_id in current_asteroid_ids}
+        # Mine laying strategy
+        # 1) If I am near another ship
+        # 2) If there are a lot of asteroids close by
+        drop_mine = False
         
-        available_asteroids = [ast for ast in self.sa.ownship.asteroids if id(ast) not in self.shot_asteroids]
+        # Check if near another ship
+        near_ship = False
+        ship_x, ship_y = self.sa.ownship.position
+        map_width, map_height = game_state['map_size']
+        for red_ship in self.sa.redships:
+            red_x, red_y = red_ship.position
+            dx = red_x - ship_x
+            dy = red_y - ship_y
+            if abs(dx) > map_width / 2:
+                dx = dx - np.sign(dx) * map_width
+            if abs(dy) > map_height / 2:
+                dy = dy - np.sign(dy) * map_height
+            dist_to_red = np.sqrt(dx**2 + dy**2)
+            if dist_to_red < 30.0:  # Threshold for "near"
+                near_ship = True
+                break
+        
+        # Check if a lot of asteroids are close by
+        asteroids_nearby = self.sa.ownship.within_radius_wrap(100.0)
+        many_asteroids = len(asteroids_nearby) >= 5
+        
+        # We'll use the local drop_mine variable calculated here
+        should_drop_mine = near_ship or many_asteroids
+
+        # Ramming strategy: if I am very close to the enemy ship, and he has fewer lives than me, ram him.
+        for red_ship in self.sa.redships:
+            red_x, red_y = red_ship.position
+            dx = red_x - ship_x
+            dy = red_y - ship_y
+            if abs(dx) > map_width / 2:
+                dx = dx - np.sign(dx) * map_width
+            if abs(dy) > map_height / 2:
+                dy = dy - np.sign(dy) * map_height
+            dist_to_red = np.sqrt(dx**2 + dy**2)
+            
+            if dist_to_red < 200.0 and red_ship.lives < self.sa.ownship.lives:
+                # Ramming mode!
+                angle_to_red = np.degrees(np.arctan2(dy, dx)) - 90.0
+                rel_angle_to_red = trim_angle(angle_to_red - self.sa.ownship.heading)
+                
+                turn_rate = np.sign(rel_angle_to_red) * np.clip(abs(3 * rel_angle_to_red), 90.0, 180.0)
+                if abs(rel_angle_to_red) < 0.5:
+                    turn_rate = 0.0
+                
+                if abs(rel_angle_to_red) < 30:
+                    thrust = ship_state.thrust_range[1]
+                else:
+                    thrust = 0.0
+                
+                fire = True # Also shoot while ramming
+                return thrust, turn_rate, fire, should_drop_mine
+
+        fire = False
 
         # get the asteroid that is most likely to hit the ship
-        nearest_asteroid = self.get_most_threatening_asteroid(available_asteroids[:10] if available_asteroids else None)
+        nearest_asteroid = self.get_most_threatening_asteroid(game_state)
 
         if nearest_asteroid is None:
-            # No threatening asteroids, default to nearest available
-            if available_asteroids:
-                # Sort by distance manually since we filtered the list
-                available_asteroids.sort(key=lambda x: x.distance)
-                nearest_asteroid = available_asteroids[0]
+            # If everything has been shot, just take the one closest to our current heading
+            if self.sa.ownship.asteroids:
+                nearest_asteroid = min(self.sa.ownship.asteroids,
+                                       key=lambda a: abs(trim_angle(a.bearing - self.sa.ownship.heading)))
             else:
-                # If everything has been shot, just take the nearest one regardless
-                nearest_asteroid = self.sa.ownship.nearest_n(1)[0] if self.sa.ownship.asteroids else None
+                nearest_asteroid = None
 
         if nearest_asteroid is None:
             return 0.0, 0.0, False, False
@@ -313,26 +321,82 @@ class LogicController(KesslerController):
 
         # Calculate relative angle to intercept point (relative to ship heading)
         relative_angle = trim_angle(angle_to_intercept - self.sa.ownship.heading)
-        norm_relative_angle = self.sa.norm_angle(relative_angle)
 
-        # Use distance to intercept point for fuzzy input
-        distance = np.sqrt(dx ** 2 + dy ** 2)
-        norm_ast_distance = self.sa.norm_distance(distance)
+        for asteroid in self.sa.ownship.asteroids:
+            # Get relative bearing to asteroid with wrap-around
+            ast_x, ast_y = asteroid.position_wrap
+            dx_ast = ast_x - ship_x
+            dy_ast = ast_y - ship_y
+            angle_to_asteroid = np.degrees(np.arctan2(dy_ast, dx_ast)) - 90.0
+            rel_angle_to_ast = trim_angle(angle_to_asteroid - self.sa.ownship.heading)
+            
+            # If the asteroid is within its angular width from our heading, we are "aimed" at it.
+            # Angular width = arctan(radius / distance)
+            ast_dist = asteroid.distance_wrap
+            if ast_dist > 0:
+                angular_width = np.degrees(np.arctan2(asteroid.radius, ast_dist))
+                if abs(rel_angle_to_ast) < angular_width:
+                    fire = True
+                    break
 
-        # feed asteroid dist and angle to the FIS
-        self.aiming_fis_sim.input["angle"] = norm_relative_angle
-        self.aiming_fis_sim.input["distance"] = norm_ast_distance
-        # compute fis output
-        self.aiming_fis_sim.compute()
-        # map normalized output to angle range [-180, 180], note that the output of the fis is determined by the membership functions and they go from -1 to 1
-        desired_aim_angle = self.aiming_fis_sim.output["aiming_angle"]*180.0
-        aim_angle_difference = relative_angle  # trim_angle(desired_aim_angle - relative_angle)
+        drop_mine = False
 
         # this converts the desired aiming angle to a control action to be fed to the ship in terms of turn rate
         # set turn rate to 0
-        turn_rate = np.sign(relative_angle)*np.clip(abs(3*relative_angle), 45.0, 180.0)
+        turn_rate = np.sign(relative_angle)*np.clip(abs(3*relative_angle), 90.0, 180.0)
         if abs(relative_angle) < 0.5:
             turn_rate = 0.0
+
+        # Emergency escape logic when invincible and too close to an asteroid
+        is_invincible = ship_state.is_respawning
+        too_close = False
+        ship_radius = self.sa.ownship.radius
+        
+        # Check all asteroids to see if any are "too close" or "on top of"
+        for asteroid in self.sa.ownship.asteroids:
+            # Distance wrap is preferred for accuracy near map edges
+            if asteroid.distance_wrap < (ship_radius + asteroid.radius + 10.0): # 10.0 safety margin
+                too_close = True
+                break
+        
+        if is_invincible and too_close:
+            # DON'T SHOOT
+            fire = False
+            
+            # Accelerate away towards the nearest empty region reachable within 3 seconds
+            escape_target = self.find_escape_target(game_state)
+            if escape_target:
+                target_x, target_y = escape_target
+                ship_x, ship_y = self.sa.ownship.position
+                
+                # Calculate angle to target with wrap-around
+                map_width, map_height = game_state.map_size
+                dx = target_x - ship_x
+                dy = target_y - ship_y
+                if abs(dx) > map_width / 2:
+                    dx = dx - np.sign(dx) * map_width
+                if abs(dy) > map_height / 2:
+                    dy = dy - np.sign(dy) * map_height
+                
+                angle_to_target = np.degrees(np.arctan2(dy, dx)) - 90.0
+                rel_angle_to_target = trim_angle(angle_to_target - self.sa.ownship.heading)
+                
+                # Aim at target
+                turn_rate = np.sign(rel_angle_to_target) * np.clip(abs(3 * rel_angle_to_target), 90.0, 180.0)
+                if abs(rel_angle_to_target) < 0.5:
+                    turn_rate = 0.0
+                
+                # Full thrust if aiming reasonably well, otherwise just turn
+                if abs(rel_angle_to_target) < 30:
+                    thrust = ship_state.thrust_range[1]
+                else:
+                    thrust = 0.0
+                
+                # Skip normal asteroid-based movement/shooting
+                if nearest_asteroid:
+                    self.shot_asteroids.discard(id(nearest_asteroid)) # Don't mark as shot if we didn't fire
+                    
+                return thrust, turn_rate, fire, should_drop_mine
 
         # Back away from the nearest asteroid
         # Find the actual nearest asteroid (not necessarily the most threatening)
@@ -348,7 +412,7 @@ class LogicController(KesslerController):
         # If asteroid is behind, drive forward.
         distance_to_asteroid = true_nearest_asteroid.distance
         # Scale thrust based on distance - only move if asteroid is reasonably close
-        distance_threshold = 300.0  # Only react if asteroid is within this distance
+        distance_threshold = 150.0  # Only react if asteroid is within this distance
 
         if distance_to_asteroid < distance_threshold:
             # Scale thrust proportionally: closer asteroids get stronger thrust
@@ -361,8 +425,8 @@ class LogicController(KesslerController):
         else:
             thrust = 0.0  # Don't move if asteroid is far away
 
-        fire = bool(abs(relative_angle) < 45.0)
-        drop_mine = False
+        fire = fire or bool(abs(relative_angle) < 15.0)
+        drop_mine = should_drop_mine
 
         if fire and nearest_asteroid:
             self.shot_asteroids.add(id(nearest_asteroid))

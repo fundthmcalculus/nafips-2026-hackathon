@@ -5,61 +5,79 @@
 
 import sys
 
-from MyAIController.hacker_controller import HackerController
 from MyAIController.logic_controller import LogicController
-from ScottDickController.scott_dick_controller import ScottDickController
 
 sys.path.append('.')
 
-from kesslergame import Scenario, KesslerGame, GraphicsType
+from kesslergame import KesslerGame, GraphicsType
 from Scenarios.example_scenarios import *
-from MyAIController.example_controller_fuzzy import MyFuzzyController
-from MyAIController.example_controller_fuzzy2 import MyFuzzyController2
+from Scenarios.custom_scenarios import custom_scenarios
 
 # Define game scenario
-# my_test_scenario = Scenario(name='Test Scenario',
-#                             num_asteroids=10,
-#                             ship_states=[
-#                                 {'position': (400, 400), 'angle': 0, 'lives': 3, 'team': 1, "mines_remaining": 3},
-#                                 # {'position': (400, 600), 'angle': 90, 'lives': 3, 'team': 2, "mines_remaining": 3},
-#                             ],
-#                             map_size=(1000, 800),
-#                             time_limit=60,
-#                             ammo_limit_multiplier=0,
-#                             stop_if_no_ammo=False)
+# Run all scenarios and collect statistics
+all_results = []
 
-my_test_scenario = Scenario(name='Test Scenario',
-                            asteroid_states=[{'position': (200, 400), 'angle': 0, 'speed': 10, 'size': 4}],
-                            ship_states=[
-                                {'position': (400, 400), 'angle': 90, 'lives': 3, 'team': 1, "mines_remaining": 3},
-                                {'position': (600, 600), 'angle': 90, 'lives': 3, 'team': 2, "mines_remaining": 3},
-                            ],
-                            map_size=(1000, 800),
-                            time_limit=60,
-                            ammo_limit_multiplier=0,
-                            stop_if_no_ammo=False)
-
-# Define Game Settings
+# Disable graphics for faster execution across all scenarios
 game_settings = {'perf_tracker': True,
-                 'graphics_type': GraphicsType.Tkinter,
-                 'realtime_multiplier': 1,
+                 'graphics_type': GraphicsType.Tkinter,  # Change to GraphicsType.Tkinter to visualize
+                 'realtime_multiplier': 10,
                  'graphics_obj': None,
                  'frequency': 60}
 
-game = KesslerGame(settings=game_settings)  # Use this to visualize the game scenario
-# game = TrainerEnvironment(settings=game_settings)  # Use this for max-speed, no-graphics simulation
+game = KesslerGame(settings=game_settings)
 
-# Evaluate the game
-pre = time.perf_counter()
-# score, perf_data = game.run(scenario=my_test_scenario, controllers=[MyFuzzyController(), MyFuzzyController()])
-# score, perf_data = game.run(scenario=my_test_scenario, controllers=[MyFuzzyController2(), MyFuzzyController2()])
-# score, perf_data = game.run(scenario=my_test_scenario, controllers=[LogicController(), ScottDickController()])
-score, perf_data = game.run(scenario=my_test_scenario, controllers=[LogicController(), HackerController()])
+print("=" * 80)
+print("RUNNING ALL SCENARIOS")
+print("=" * 80)
 
-# Print out some general info about the result
-print('Scenario eval time: '+str(time.perf_counter()-pre))
-print(score.stop_reason)
-print('Asteroids hit: ' + str([team.asteroids_hit for team in score.teams]))
-print('Deaths: ' + str([team.deaths for team in score.teams]))
-print('Accuracy: ' + str([team.accuracy for team in score.teams]))
-print('Mean eval time: ' + str([team.mean_eval_time for team in score.teams]))
+for scenario_idx, scenario in enumerate(custom_scenarios):
+    print(f"\n{'=' * 80}")
+    print(f"SCENARIO {scenario_idx}: {scenario.name}")
+    print(f"{'=' * 80}")
+
+    # Evaluate the game
+    pre = time.perf_counter()
+    controllers = [LogicController() for _ in scenario.ship_states]
+    score, perf_data = game.run(scenario=scenario, controllers=controllers)
+    elapsed = time.perf_counter() - pre
+
+    # Store results
+    result = {
+        'scenario_idx': scenario_idx,
+        'scenario_name': scenario.name,
+        'eval_time': elapsed,
+        'stop_reason': score.stop_reason,
+        'asteroids_hit': [team.asteroids_hit for team in score.teams],
+        'deaths': [team.deaths for team in score.teams],
+        'accuracy': [team.accuracy for team in score.teams],
+        'mean_eval_time': [team.mean_eval_time for team in score.teams]
+    }
+    all_results.append(result)
+
+    # Print individual scenario results
+    print(f'Scenario eval time: {elapsed:.2f}s')
+    print(f'Stop reason: {score.stop_reason}')
+    print(f'Asteroids hit: {result["asteroids_hit"]}')
+    print(f'Deaths: {result["deaths"]}')
+    print(f'Accuracy: {result["accuracy"]}')
+    print(f'Mean eval time: {result["mean_eval_time"]}')
+
+# Print aggregate statistics
+print(f"\n{'=' * 80}")
+print("AGGREGATE STATISTICS ACROSS ALL SCENARIOS")
+print(f"{'=' * 80}")
+
+total_asteroids = sum(r['asteroids_hit'][0] for r in all_results)
+total_deaths = sum(r['deaths'][0] for r in all_results)
+avg_accuracy = sum(r['accuracy'][0] for r in all_results) / len(all_results)
+total_time = sum(r['eval_time'] for r in all_results)
+
+print(f"Total scenarios run: {len(all_results)}")
+print(f"Total asteroids hit: {total_asteroids}")
+print(f"Total deaths: {total_deaths}")
+print(f"Average accuracy: {avg_accuracy:.2%}")
+print(f"Total evaluation time: {total_time:.2f}s")
+print(f"\nPer-scenario summary:")
+for r in all_results:
+    print(
+        f"  {r['scenario_name']:20s} - Asteroids: {r['asteroids_hit'][0]:3d}, Deaths: {r['deaths'][0]}, Accuracy: {r['accuracy'][0]:.2%}")
