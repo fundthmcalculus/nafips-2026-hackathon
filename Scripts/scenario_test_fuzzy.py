@@ -6,7 +6,7 @@
 import sys
 
 from MyAIController.logic_controller import LogicController
-from MyAIController.logic_controller03 import LogicController03
+from MyAIController.logic_controller04 import LogicController04
 
 sys.path.append('.')
 
@@ -36,7 +36,7 @@ for scenario_idx, scenario in enumerate(custom_scenarios):
     print(f"SCENARIO {scenario_idx}: {scenario.name}")
     print(f"{'=' * 80}")
 
-    controllers = [LogicController() if state.get('team', 0) == 1 else LogicController03() for state in
+    controllers = [LogicController() if state.get('team', 0) == 1 else LogicController04() for state in
                    scenario.ship_states]
 
     for ij in range(2):
