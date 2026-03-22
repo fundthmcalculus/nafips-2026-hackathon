@@ -27,7 +27,7 @@ game_settings = {'perf_tracker': True,
                  'realtime_multiplier': 0.7,
                  'graphics_obj': None,
                  'competition_safe_mode': True,
-                 'frequency': 30}
+                 'frequency': 60}
 
 game = KesslerGame(settings=game_settings)
 

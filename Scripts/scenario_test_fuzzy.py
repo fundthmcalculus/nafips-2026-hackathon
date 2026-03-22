@@ -6,7 +6,7 @@ import os
 import sys
 
 from MyAIController.logic_controller import LogicController
-from MyAIController.logic_controller04 import LogicController04
+from MyAIController.logic_controller05 import LogicController05
 
 sys.path.append('.')
 
@@ -21,7 +21,7 @@ all_results = []
 # Disable graphics for faster execution across all scenarios
 game_settings = {'perf_tracker': True,
                  'graphics_type': GraphicsType.NoGraphics if not os.getenv('SHOW_GAME') else GraphicsType.Tkinter,  # Change to GraphicsType.Tkinter to visualize
-                 'realtime_multiplier': 6,
+                 'realtime_multiplier': 1,
                  'graphics_obj': None,
                  'frequency': 60}
 
@@ -36,7 +36,7 @@ for scenario_idx, scenario in enumerate(custom_scenarios):
     print(f"SCENARIO {scenario_idx}: {scenario.name}")
     print(f"{'=' * 80}")
 
-    controllers = [LogicController() if state.get('team', 0) == 1 else LogicController04() for state in
+    controllers = [LogicController() if state.get('team', 0) == 1 else LogicController05() for state in
                    scenario.ship_states]
 
     for ij in range(2):

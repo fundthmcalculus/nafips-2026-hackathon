@@ -1,0 +1,73 @@
+{
+  "$schema": "https://charm.land/crush.json",
+  "permissions": {
+    "allowed_tools": [
+      "view",
+      "ls",
+      "grep",
+      "edit",
+      "mcp_context7_get-library-doc"
+    ]
+  },
+  "options": {
+    "attribution": {
+      "trailer_style": "co-authored-by",
+      "generated_with": true
+    }
+  },
+  "providers": {
+    "localhost": {
+      "name": "LM Studio",
+      "base_url": "http://localhost:1234/v1/",
+      "type": "openai-compat",
+      "models": [
+        {
+          "name": "Rnj 1 Instruct",
+          "id": "rnj-1-instruct@iq4_nl",
+          "context_window": 32768,
+          "default_max_tokens": 20000,
+          "can_reason": false,
+          "cost_per_1m_in": 0,
+          "cost_per_1m_out": 0,
+          "cost_per_1m_in_cached": 0,
+          "cost_per_1m_out_cached": 0,
+          "supports_attachments": false,
+          "options": {}
+        }
+      ]
+    },
+    "dgxspark": {
+      "name": "LM Studio",
+      "base_url": "http://spark-64f5:1234/v1/",
+      "type": "openai-compat",
+      "models": [
+        {
+          "name": "Qwen 3 Coder Next",
+          "id": "qwen/qwen3-coder-next",
+          "context_window": 262144,
+          "default_max_tokens": 20000,
+          "can_reason": true,
+          "cost_per_1m_in": 0,
+          "cost_per_1m_out": 0,
+          "cost_per_1m_in_cached": 0,
+          "cost_per_1m_out_cached": 0,
+          "supports_attachments": true,
+          "options": {}
+        },
+        {
+          "name": "Qwen 3.5 9B",
+          "id": "qwen3.5-9b",
+          "context_window": 262144,
+          "default_max_tokens": 20000,
+          "can_reason": false,
+          "cost_per_1m_in": 0,
+          "cost_per_1m_out": 0,
+          "cost_per_1m_in_cached": 0,
+          "cost_per_1m_out_cached": 0,
+          "supports_attachments": false,
+          "options": {}
+        }
+      ]
+    }
+  }
+}
